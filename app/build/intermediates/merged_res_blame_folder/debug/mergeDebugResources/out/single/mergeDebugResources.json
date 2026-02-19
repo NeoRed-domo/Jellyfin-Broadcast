@@ -1,0 +1,54 @@
+[
+    {
+        "merged": "com.jellyfinbroadcast.app-debug-4:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.jellyfinbroadcast.app-main-6:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\drawable_ic_launcher_foreground.xml.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\drawable\\ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\mipmap-xhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\mipmap-hdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\mipmap-hdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\mipmap-xxxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\drawable_ic_launcher_background.xml.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\drawable\\ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.jellyfinbroadcast.app-debug-4:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "com.jellyfinbroadcast.app-main-6:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\mipmap-mdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\mipmap-mdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "com.jellyfinbroadcast.app-debug-4:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.jellyfinbroadcast.app-main-6:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\drawable_tv_banner.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\drawable\\tv_banner.png"
+    },
+    {
+        "merged": "com.jellyfinbroadcast.app-debug-4:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "com.jellyfinbroadcast.app-main-6:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-debug-4:\\mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\gregt\\.gradle\\daemon\\8.11.1\\com.jellyfinbroadcast.app-main-6:\\mipmap-xxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "com.jellyfinbroadcast.app-debug-4:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "com.jellyfinbroadcast.app-main-6:/mipmap-xxhdpi/ic_launcher.png"
+    }
+]

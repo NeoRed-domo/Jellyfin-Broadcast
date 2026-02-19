@@ -1,0 +1,4 @@
+﻿> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+BUILD SUCCESSFUL in 5s
+14 actionable tasks: 1 executed, 13 up-to-date

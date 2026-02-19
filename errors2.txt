@@ -1,0 +1,33 @@
+﻿> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+.\gradlew.bat : e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinb
+roadcast/MainActivity.kt:201:33 Unresolved reference 'reportPlaybackStart'.
+Au caractère Ligne:1 : 159
++ ... OME = "C:\Android\Sdk"; .\gradlew.bat compileDebugKotlin 2>&1 | Where ...
++                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (e: file:///C:/U...PlaybackStart'.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:19:38 Unresolved reference 'IncomingMessage'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:185:56 Unresolved reference 'IncomingMessage'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:187:16 Unresolved reference 'IncomingMessage'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:188:36 Unresolved reference 'data'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:198:16 Unresolved reference 'IncomingMessage'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:199:36 Unresolved reference 'data'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:222:16 Unresolved reference 'IncomingMessage'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:223:36 Unresolved reference 'data'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:254:37 Unresolved reference 'getItem'.
+e: file:///C:/Users/gregt/.gemini/antigravity/scratch/JellyfinBroadcast/app/src/main/java/com/jellyfinbroadcast/data/Je
+llyfinManager.kt:255:18 Unresolved reference 'type'.
+FAILURE: Build failed with an exception.
+BUILD FAILED in 1s
+14 actionable tasks: 1 executed, 13 up-to-date
