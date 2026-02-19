@@ -9,7 +9,7 @@ L'objectif est simple : **afficher du contenu sans friction**. Pas de navigation
 ## ✨ Fonctionnalités
 
 - **🚀 Configuration Zéro-Saisie (TV)** : Plus besoin de taper des adresses IP et mots de passe avec une télécommande. Scannez simplement le QR Code affiché sur la TV avec votre application Jellyfin Broadcast sur smartphone !
-- **📱 Contrôle à distance (Cast)** : L'application apparaît comme un appareil "Jellyfin Broadcast" dans votre serveur. Lancez la lecture depuis n'importe quel autre client Jellyfin (Web, Mobile).
+- **📱 Contrôle à distance (Cast)** : L'application apparaît comme un appareil "Jellyfin Broadcast" dans votre serveur. Lancez la lecture depuis n'importe quel autre client Jellyfin (Web, Mobile, PLugin Jellyfin sur Jeedom).
 - **🎨 Interface Invisible** : Pendant la lecture, aucune interface ne gêne la vue. Idéal pour les boutiques, salles d'attente ou cadres photo numériques.
 - **🔄 Auto-Sizing** : Interface adaptative (TV paysage, Téléphone portrait/paysage).
 - **⚡ Démarrage rapide** : L'application se reconnecte et est prête à recevoir du contenu en quelques secondes.
