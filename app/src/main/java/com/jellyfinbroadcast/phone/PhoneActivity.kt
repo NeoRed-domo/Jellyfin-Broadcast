@@ -24,7 +24,7 @@ class PhoneActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_phone)
-        showQrCodeScreen()
+        if (savedInstanceState == null) showQrCodeScreen()
     }
 
     private fun showQrCodeScreen() {
@@ -45,7 +45,8 @@ class PhoneActivity : AppCompatActivity() {
         val options = ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("Cadrez le QR code de la TV")
-            setBeepEnabled(true)
+            setBeepEnabled(false)
+            setOrientationLocked(false)
         }
         qrScanLauncher.launch(options)
     }

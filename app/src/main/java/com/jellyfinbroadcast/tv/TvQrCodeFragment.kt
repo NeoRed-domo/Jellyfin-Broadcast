@@ -39,14 +39,11 @@ class TvQrCodeFragment : Fragment() {
         val localIp = NetworkUtils.getLocalIpAddress()
         showQrCode(localIp, server.port)
 
-        binding.tvStatus.text = "Recherche du serveur Jellyfin..."
+        binding.tvStatus.text = "Scanner ce QR code pour configurer"
         lifecycleScope.launch {
             val serverInfo = JellyfinDiscovery(requireContext()).discover()
             if (serverInfo != null) {
                 (activity as? TvActivity)?.onServerDiscovered(serverInfo.host, serverInfo.port)
-            }
-            if (_binding != null) {
-                binding.tvStatus.text = "Scanner ce QR code pour configurer"
             }
         }
     }

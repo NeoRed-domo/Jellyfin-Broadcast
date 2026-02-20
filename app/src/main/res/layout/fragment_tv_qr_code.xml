@@ -16,7 +16,7 @@
             android:id="@+id/tv_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Recherche du serveur Jellyfin..."
+            android:text="Scanner ce QR code pour configurer"
             android:textColor="@color/jellyfin_on_surface"
             android:textSize="24sp"
             android:layout_marginBottom="24dp" />
