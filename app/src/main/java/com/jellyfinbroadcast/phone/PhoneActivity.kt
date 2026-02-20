@@ -34,11 +34,7 @@ class PhoneActivity : AppCompatActivity() {
     }
 
     fun showConfigForm(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null) {
-        val fragment = ConfigFormFragment().apply {
-            this.tvIp = tvIp
-            this.tvPort = tvPort
-            this.prefilledHost = prefilledHost
-        }
+        val fragment = ConfigFormFragment.newInstance(tvIp, tvPort, prefilledHost)
         supportFragmentManager.beginTransaction()
             .replace(R.id.container, fragment)
             .addToBackStack(null)

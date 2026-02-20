@@ -25,12 +25,27 @@ class ConfigFormFragment : Fragment() {
     private var _binding: FragmentConfigFormBinding? = null
     private val binding get() = _binding!!
 
-    var tvIp: String? = null
-    var tvPort: Int = 8765
-    var prefilledHost: String? = null
+    private val tvIp: String? get() = arguments?.getString(ARG_TV_IP)
+    private val tvPort: Int get() = arguments?.getInt(ARG_TV_PORT) ?: 8765
+    private val prefilledHost: String? get() = arguments?.getString(ARG_PREFILLED_HOST)
 
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) { json() }
+    }
+
+    companion object {
+        private const val ARG_TV_IP = "tv_ip"
+        private const val ARG_TV_PORT = "tv_port"
+        private const val ARG_PREFILLED_HOST = "prefilled_host"
+
+        fun newInstance(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null) =
+            ConfigFormFragment().apply {
+                arguments = Bundle().apply {
+                    putString(ARG_TV_IP, tvIp)
+                    putInt(ARG_TV_PORT, tvPort)
+                    putString(ARG_PREFILLED_HOST, prefilledHost)
+                }
+            }
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
