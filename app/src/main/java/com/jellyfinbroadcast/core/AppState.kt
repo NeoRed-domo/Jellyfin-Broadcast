@@ -1,5 +1,7 @@
 package com.jellyfinbroadcast.core
 
+import androidx.annotation.VisibleForTesting
+
 sealed class AppState {
     object INIT : AppState()
     object DISCOVERY : AppState()
@@ -8,7 +10,6 @@ sealed class AppState {
     object PLAYING : AppState()
     object PAUSED : AppState()
     object BUFFERING : AppState()
-    object STOPPED : AppState()
 }
 
 sealed class AppEvent {
@@ -28,6 +29,7 @@ class AppStateMachine {
     var currentState: AppState = AppState.INIT
         private set
 
+    @VisibleForTesting
     fun setState(state: AppState) { currentState = state }
 
     fun transition(event: AppEvent) {
@@ -40,7 +42,8 @@ class AppStateMachine {
             currentState is AppState.CONFIGURED && event is AppEvent.Play -> AppState.PLAYING
             currentState is AppState.PLAYING && event is AppEvent.Pause -> AppState.PAUSED
             currentState is AppState.PAUSED && event is AppEvent.Play -> AppState.PLAYING
-            currentState is AppState.PLAYING && event is AppEvent.Stop -> AppState.CONFIGURED
+            (currentState is AppState.PLAYING || currentState is AppState.PAUSED ||
+             currentState is AppState.BUFFERING) && event is AppEvent.Stop -> AppState.CONFIGURED
             currentState is AppState.PLAYING && event is AppEvent.Buffering -> AppState.BUFFERING
             currentState is AppState.BUFFERING && event is AppEvent.BufferingEnd -> AppState.PLAYING
             (currentState is AppState.CONFIGURED || currentState is AppState.PLAYING ||

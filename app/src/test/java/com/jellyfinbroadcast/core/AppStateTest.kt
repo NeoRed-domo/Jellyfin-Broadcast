@@ -66,4 +66,28 @@ class AppStateTest {
         machine.transition(AppEvent.ShowQrCode)
         assertEquals(AppState.QR_CODE(), machine.currentState)
     }
+
+    @Test
+    fun `PAUSED transitions to CONFIGURED on stop`() {
+        val machine = AppStateMachine()
+        machine.setState(AppState.PAUSED)
+        machine.transition(AppEvent.Stop)
+        assertEquals(AppState.CONFIGURED, machine.currentState)
+    }
+
+    @Test
+    fun `BUFFERING transitions to CONFIGURED on stop`() {
+        val machine = AppStateMachine()
+        machine.setState(AppState.BUFFERING)
+        machine.transition(AppEvent.Stop)
+        assertEquals(AppState.CONFIGURED, machine.currentState)
+    }
+
+    @Test
+    fun `invalid event is silently ignored`() {
+        val machine = AppStateMachine()
+        // INIT state + Play event = no transition
+        machine.transition(AppEvent.Play)
+        assertEquals(AppState.INIT, machine.currentState)
+    }
 }
