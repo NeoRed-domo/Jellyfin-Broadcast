@@ -1,11 +1,11 @@
 package com.jellyfinbroadcast.phone
 
-import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import com.jellyfinbroadcast.core.NetworkUtils
 import com.jellyfinbroadcast.core.QrCodeGenerator
 import com.jellyfinbroadcast.databinding.FragmentPhoneQrCodeBinding
 import com.jellyfinbroadcast.server.ConfigServer
@@ -34,7 +34,7 @@ class PhoneQrCodeFragment : Fragment() {
     }
 
     private fun showQrCode(port: Int) {
-        val ip = getLocalIpAddress()
+        val ip = NetworkUtils.getLocalIpAddress()
         val bitmap = QrCodeGenerator.generate(ip, port)
         binding.ivQrCode.setImageBitmap(bitmap)
     }
@@ -58,16 +58,6 @@ class PhoneQrCodeFragment : Fragment() {
             binding.menuOverlay.visibility = View.GONE
             (activity as? PhoneActivity)?.startQrScanner()
         }
-    }
-
-    private fun getLocalIpAddress(): String {
-        val wifiManager = requireContext().applicationContext
-            .getSystemService(WifiManager::class.java)
-        val ip = wifiManager?.connectionInfo?.ipAddress ?: 0
-        return String.format(
-            "%d.%d.%d.%d",
-            ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff
-        )
     }
 
     override fun onDestroyView() {

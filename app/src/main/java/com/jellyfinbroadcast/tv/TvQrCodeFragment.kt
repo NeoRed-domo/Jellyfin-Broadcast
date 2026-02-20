@@ -1,12 +1,12 @@
 package com.jellyfinbroadcast.tv
 
-import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.jellyfinbroadcast.core.NetworkUtils
 import com.jellyfinbroadcast.core.QrCodeGenerator
 import com.jellyfinbroadcast.databinding.FragmentTvQrCodeBinding
 import com.jellyfinbroadcast.discovery.JellyfinDiscovery
@@ -36,7 +36,7 @@ class TvQrCodeFragment : Fragment() {
         configServer = server
         server.start()
 
-        val localIp = getLocalIpAddress()
+        val localIp = NetworkUtils.getLocalIpAddress()
         showQrCode(localIp, server.port)
 
         binding.tvStatus.text = "Recherche du serveur Jellyfin..."
@@ -56,16 +56,6 @@ class TvQrCodeFragment : Fragment() {
         binding.ivQrCode.setImageBitmap(bitmap)
         binding.ivQrCode.visibility = View.VISIBLE
         binding.tvInstructions.visibility = View.VISIBLE
-    }
-
-    private fun getLocalIpAddress(): String {
-        val wifiManager = requireContext().applicationContext
-            .getSystemService(WifiManager::class.java)
-        val ip = wifiManager?.connectionInfo?.ipAddress ?: 0
-        return String.format(
-            "%d.%d.%d.%d",
-            ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff
-        )
     }
 
     override fun onDestroyView() {
