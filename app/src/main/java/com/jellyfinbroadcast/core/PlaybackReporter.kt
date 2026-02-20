@@ -25,6 +25,7 @@ class PlaybackReporter(private val api: ApiClient) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentItemId: UUID? = null
     private var getPositionMs: (() -> Long)? = null
+    private var getIsPausedState: (() -> Boolean)? = null
 
     fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
@@ -32,7 +33,7 @@ class PlaybackReporter(private val api: ApiClient) {
             runCatching {
                 playstateApi.reportPlaybackStart(
                     PlaybackStartInfo(
-                        canSeek = false,
+                        canSeek = true,
                         item = null,
                         itemId = itemId,
                         sessionId = null,
@@ -59,8 +60,9 @@ class PlaybackReporter(private val api: ApiClient) {
         }
     }
 
-    fun startPeriodicReporting(getPosition: () -> Long) {
+    fun startPeriodicReporting(getPosition: () -> Long, getIsPaused: () -> Boolean = { false }) {
         getPositionMs = getPosition
+        getIsPausedState = getIsPaused
         reportingJob = scope.launch {
             while (isActive) {
                 delay(REPORT_INTERVAL_MS)
@@ -69,21 +71,21 @@ class PlaybackReporter(private val api: ApiClient) {
         }
     }
 
-    fun reportProgress() {
+    private fun reportProgress() {
         val itemId = currentItemId ?: return
         val posMs = getPositionMs?.invoke() ?: return
         scope.launch {
             runCatching {
                 playstateApi.reportPlaybackProgress(
                     PlaybackProgressInfo(
-                        canSeek = false,
+                        canSeek = true,
                         item = null,
                         itemId = itemId,
                         sessionId = null,
                         mediaSourceId = null,
                         audioStreamIndex = null,
                         subtitleStreamIndex = null,
-                        isPaused = false,
+                        isPaused = getIsPausedState?.invoke() ?: false,
                         isMuted = false,
                         positionTicks = msToTicks(posMs),
                         playbackStartTimeTicks = null,
@@ -103,27 +105,30 @@ class PlaybackReporter(private val api: ApiClient) {
         }
     }
 
-    fun reportPlaybackStop(positionMs: Long) {
+    suspend fun reportPlaybackStop(positionMs: Long) {
         val itemId = currentItemId ?: return
         reportingJob?.cancel()
-        scope.launch {
-            runCatching {
-                playstateApi.reportPlaybackStopped(
-                    PlaybackStopInfo(
-                        item = null,
-                        itemId = itemId,
-                        sessionId = null,
-                        mediaSourceId = null,
-                        positionTicks = msToTicks(positionMs),
-                        liveStreamId = null,
-                        playSessionId = null,
-                        failed = false,
-                        nextMediaType = null,
-                        playlistItemId = null,
-                        nowPlayingQueue = emptyList()
-                    )
+        runCatching {
+            playstateApi.reportPlaybackStopped(
+                PlaybackStopInfo(
+                    item = null,
+                    itemId = itemId,
+                    sessionId = null,
+                    mediaSourceId = null,
+                    positionTicks = msToTicks(positionMs),
+                    liveStreamId = null,
+                    playSessionId = null,
+                    failed = false,
+                    nextMediaType = null,
+                    playlistItemId = null,
+                    nowPlayingQueue = emptyList()
                 )
-            }
+            )
         }
+    }
+
+    fun release() {
+        reportingJob?.cancel()
+        scope.cancel()
     }
 }
