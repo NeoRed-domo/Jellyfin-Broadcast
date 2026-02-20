@@ -9,6 +9,8 @@ import com.jellyfinbroadcast.core.AppState
 import com.jellyfinbroadcast.core.AppStateMachine
 import com.jellyfinbroadcast.core.JellyfinSession
 import com.jellyfinbroadcast.server.ConfigPayload
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class TvActivity : AppCompatActivity() {
 
@@ -39,7 +41,7 @@ class TvActivity : AppCompatActivity() {
         val success = jellyfinSession.authenticate(payload)
         if (success) {
             stateMachine.transition(AppEvent.ConfigReceived)
-            runOnUiThread { showPlayerScreen() }
+            withContext(Dispatchers.Main) { showPlayerScreen() }
         }
         return success
     }
@@ -50,11 +52,12 @@ class TvActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // Long press center D-pad when idle → show QR code for reconfiguration
+        // Long press center D-pad from valid states → show QR code for reconfiguration
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
             event.isLongPress &&
-            stateMachine.currentState !is AppState.PLAYING &&
-            stateMachine.currentState !is AppState.PAUSED
+            (stateMachine.currentState is AppState.CONFIGURED ||
+             stateMachine.currentState is AppState.PLAYING ||
+             stateMachine.currentState is AppState.PAUSED)
         ) {
             stateMachine.transition(AppEvent.ShowQrCode)
             showQrCodeScreen()
