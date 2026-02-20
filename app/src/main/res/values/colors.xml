@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="jellyfin_blue">#00A4DC</color>
+    <color name="jellyfin_purple">#AA5CC3</color>
+    <color name="jellyfin_dark">#101010</color>
+    <color name="jellyfin_surface">#1C1C1C</color>
+    <color name="jellyfin_on_surface">#FFFFFF</color>
+    <color name="jellyfin_error">#CF6679</color>
+</resources>

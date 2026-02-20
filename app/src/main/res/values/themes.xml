@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.JellyfinBroadcast" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/jellyfin_blue</item>
+        <item name="colorPrimaryVariant">@color/jellyfin_purple</item>
+        <item name="colorOnPrimary">@color/jellyfin_on_surface</item>
+        <item name="android:windowBackground">@color/jellyfin_dark</item>
+    </style>
+</resources>
