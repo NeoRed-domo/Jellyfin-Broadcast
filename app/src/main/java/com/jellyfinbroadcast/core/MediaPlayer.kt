@@ -63,6 +63,8 @@ class MediaPlayer(private val context: Context) {
     fun getCurrentPosition(): Long = player?.currentPosition ?: 0L
     fun isPlaying(): Boolean = player?.isPlaying ?: false
 
+    fun getExoPlayer(): ExoPlayer? = player
+
     fun release() {
         player?.release()
         player = null

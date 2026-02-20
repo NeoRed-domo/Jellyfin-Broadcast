@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jellyfin_dark">
+
+    <ImageView
+        android:id="@+id/iv_qr_code"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:padding="32dp" />
+
+    <LinearLayout
+        android:id="@+id/menu_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btn_configure_this"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Configurer cet appareil"
+            android:backgroundTint="@color/jellyfin_blue"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/btn_scan_qr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Scanner un QR code"
+            android:backgroundTint="@color/jellyfin_purple" />
+    </LinearLayout>
+</FrameLayout>

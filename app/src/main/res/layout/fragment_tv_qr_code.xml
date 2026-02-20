@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jellyfin_dark">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Initialisation..."
+            android:textColor="@color/jellyfin_on_surface"
+            android:textSize="24sp"
+            android:layout_marginBottom="24dp" />
+
+        <ImageView
+            android:id="@+id/iv_qr_code"
+            android:layout_width="300dp"
+            android:layout_height="300dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_instructions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Scannez ce code avec l'app Jellyfin Broadcast"
+            android:textColor="@color/jellyfin_blue"
+            android:textSize="16sp"
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>
