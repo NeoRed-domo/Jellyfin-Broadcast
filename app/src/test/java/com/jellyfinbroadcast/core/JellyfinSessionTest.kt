@@ -28,4 +28,10 @@ class JellyfinSessionTest {
         val url = JellyfinSession.buildServerUrl("192.168.1.10", 0)
         assertEquals("http://192.168.1.10:8096", url)
     }
+
+    @Test
+    fun `buildServerUrl does not append port when host already has one`() {
+        val url = JellyfinSession.buildServerUrl("http://myserver.local:9000", 8096)
+        assertEquals("http://myserver.local:9000", url)
+    }
 }

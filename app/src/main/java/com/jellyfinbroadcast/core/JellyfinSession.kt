@@ -1,7 +1,7 @@
 package com.jellyfinbroadcast.core
 
 import android.content.Context
-import androidx.annotation.VisibleForTesting
+import android.util.Log
 import com.jellyfinbroadcast.server.ConfigPayload
 import org.jellyfin.sdk.Jellyfin
 import org.jellyfin.sdk.JellyfinOptions
@@ -15,20 +15,26 @@ import org.jellyfin.sdk.model.api.AuthenticateUserByName
 class JellyfinSession(private val context: Context) {
 
     companion object {
+        private const val TAG = "JellyfinSession"
         const val CLIENT_NAME = "Jellyfin Broadcast"
         const val CLIENT_VERSION = "1.0.0"
         const val DEFAULT_PORT = 8096
 
         /**
          * Builds a full server URL from [host] and [port].
-         * If [host] already starts with http:// or https://, the scheme is preserved.
-         * If [port] is 0, [DEFAULT_PORT] is used.
+         * Preserves existing http:// or https:// scheme.
+         * Uses [DEFAULT_PORT] if [port] is 0.
+         * Does not append port if the host already contains one after the scheme.
          */
         fun buildServerUrl(host: String, port: Int): String {
             val effectivePort = if (port > 0) port else DEFAULT_PORT
             return when {
-                host.startsWith("http://") || host.startsWith("https://") ->
-                    "$host:$effectivePort"
+                host.startsWith("http://") || host.startsWith("https://") -> {
+                    // Check if host already has a port (e.g. "http://server:9000")
+                    val afterScheme = host.substringAfter("://")
+                    if (afterScheme.contains(':')) host  // already has port
+                    else "$host:$effectivePort"
+                }
                 else -> "http://$host:$effectivePort"
             }
         }
@@ -38,7 +44,7 @@ class JellyfinSession(private val context: Context) {
 
     /**
      * Authenticates with the Jellyfin server using [config] credentials.
-     * Returns `true` on success, `false` on authentication failure or network error.
+     * @return `true` on success, `false` on failure (logs reason with Log.w)
      */
     suspend fun authenticate(config: ConfigPayload): Boolean {
         return try {
@@ -47,15 +53,14 @@ class JellyfinSession(private val context: Context) {
                 android.provider.Settings.Secure.ANDROID_ID
             ) ?: "unknown"
 
-            val jellyfinOptions = JellyfinOptions.Builder().apply {
+            val jellyfin = Jellyfin(JellyfinOptions.Builder().apply {
                 clientInfo = ClientInfo(name = CLIENT_NAME, version = CLIENT_VERSION)
                 deviceInfo = DeviceInfo(
                     id = deviceId,
                     name = "Jellyfin Broadcast - ${android.os.Build.MODEL}"
                 )
-            }
+            })
 
-            val jellyfin = Jellyfin(jellyfinOptions)
             val serverUrl = buildServerUrl(config.host, config.port)
             val client = jellyfin.createApi(baseUrl = serverUrl)
             val authApi = UserApi(client)
@@ -65,13 +70,19 @@ class JellyfinSession(private val context: Context) {
                     pw = config.password
                 )
             )
-            api = client.apply {
-                accessToken = response.content.accessToken
+            val token = response.content.accessToken
+            if (token == null) {
+                Log.w(TAG, "Authentication succeeded but server returned null accessToken")
+                return false
             }
+            client.update(accessToken = token)
+            api = client
             true
         } catch (e: ApiClientException) {
+            Log.w(TAG, "Jellyfin auth failed (API error ${e.message})")
             false
         } catch (e: Exception) {
+            Log.w(TAG, "Jellyfin auth failed (${e.javaClass.simpleName}: ${e.message})")
             false
         }
     }
