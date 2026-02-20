@@ -25,7 +25,7 @@ class ConfigServer(
                     ServerSocket(p).use { return p }
                 } catch (_: Exception) { continue }
             }
-            return startPort
+            throw IllegalStateException("No available port found in range $startPort..$maxPort")
         }
     }
 

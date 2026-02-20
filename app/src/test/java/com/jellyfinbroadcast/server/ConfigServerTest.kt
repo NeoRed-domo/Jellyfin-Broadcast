@@ -25,7 +25,23 @@ class ConfigServerTest {
 
     @Test
     fun `ConfigServer finds fallback port when primary is busy`() {
-        val port = ConfigServer.findAvailablePort(startPort = 8765)
-        assertTrue(port in 8765..8775)
+        // Pre-bind 8765 to force fallback to 8766+
+        java.net.ServerSocket(8765).use { _ ->
+            val port = ConfigServer.findAvailablePort(startPort = 8765)
+            assertTrue("Expected port > 8765, got $port", port in 8766..8775)
+        }
+    }
+
+    @Test
+    fun `ConfigServer throws when all ports are busy`() {
+        // Bind all ports in a tiny range
+        val sockets = (9900..9902).map { java.net.ServerSocket(it) }
+        try {
+            assertThrows(IllegalStateException::class.java) {
+                ConfigServer.findAvailablePort(startPort = 9900, maxPort = 9902)
+            }
+        } finally {
+            sockets.forEach { it.close() }
+        }
     }
 }
