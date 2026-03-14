@@ -254,5 +254,6 @@ object DeviceProfileFactory {
         return PASSTHROUGH_ENCODING_MAP.entries
             .filter { (encoding, _) -> capabilities.supportsEncoding(encoding) }
             .map { (_, codec) -> codec }
+            .distinct()
     }
 }
