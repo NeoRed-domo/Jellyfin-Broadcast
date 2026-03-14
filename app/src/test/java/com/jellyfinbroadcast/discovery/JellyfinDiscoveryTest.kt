@@ -6,21 +6,19 @@ import org.junit.Test
 class JellyfinDiscoveryTest {
 
     @Test
-    fun `parseServiceInfo extracts host and port`() {
-        val result = JellyfinDiscovery.parseServiceInfo(
-            host = "192.168.1.10",
-            port = 8096
-        )
-        assertEquals("192.168.1.10", result.host)
+    fun `parseServerResponse extracts host and port`() {
+        val json = """{"Address":"http://192.168.1.10:8096"}"""
+        val result = JellyfinDiscovery.parseServerResponse(json)
+        assertNotNull(result)
+        assertEquals("192.168.1.10", result!!.host)
         assertEquals(8096, result.port)
     }
 
     @Test
-    fun `parseServiceInfo uses default port 8096 when port is 0`() {
-        val result = JellyfinDiscovery.parseServiceInfo(
-            host = "192.168.1.10",
-            port = 0
-        )
-        assertEquals(8096, result.port)
+    fun `parseServerResponse uses default port 8096 when port is absent`() {
+        val json = """{"Address":"http://192.168.1.10"}"""
+        val result = JellyfinDiscovery.parseServerResponse(json)
+        assertNotNull(result)
+        assertEquals(8096, result!!.port)
     }
 }

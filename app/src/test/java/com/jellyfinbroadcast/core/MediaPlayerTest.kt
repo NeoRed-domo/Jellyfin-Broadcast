@@ -1,54 +1,94 @@
 package com.jellyfinbroadcast.core
 
+import androidx.media3.common.PlaybackException
 import org.junit.Assert.*
 import org.junit.Test
 
 class MediaPlayerTest {
 
     @Test
-    fun `buildStreamUrl uses direct play by default`() {
-        val url = MediaPlayer.buildStreamUrl(
+    fun `buildDirectPlayUrl uses static stream`() {
+        val url = MediaPlayer.buildDirectPlayUrl(
             serverUrl = "http://192.168.1.10:8096",
             itemId = "abc123",
             token = "mytoken",
-            transcode = false
+            mediaSourceId = "abc123"
         )
         assertTrue(url.contains("abc123"))
-        assertTrue(url.contains("Static"))
+        assertTrue("Direct play should use static=true", url.contains("static=true"))
+        assertFalse("Direct play should not use m3u8", url.contains("master.m3u8"))
     }
 
     @Test
-    fun `buildStreamUrl uses transcode endpoint when requested`() {
-        val url = MediaPlayer.buildStreamUrl(
+    fun `buildHlsFallbackUrl uses transcode endpoint`() {
+        val url = MediaPlayer.buildHlsFallbackUrl(
             serverUrl = "http://192.168.1.10:8096",
             itemId = "abc123",
-            token = "mytoken",
-            transcode = true
+            token = "mytoken"
         )
         assertTrue("Expected master.m3u8 in transcode URL", url.contains("master.m3u8"))
-        assertFalse("Transcode URL should not contain Static=true", url.contains("Static=true"))
+        assertFalse("Transcode URL should not contain static=true", url.contains("static=true"))
     }
 
     @Test
-    fun `buildStreamUrl direct play does not use transcode endpoint`() {
-        val url = MediaPlayer.buildStreamUrl(
+    fun `buildDirectPlayUrl includes api token`() {
+        val url = MediaPlayer.buildDirectPlayUrl(
             serverUrl = "http://192.168.1.10:8096",
             itemId = "abc123",
             token = "mytoken",
-            transcode = false
-        )
-        assertFalse("Direct play should not use m3u8", url.contains("master.m3u8"))
-        assertTrue("Direct play should use Static=true", url.contains("Static=true"))
-    }
-
-    @Test
-    fun `buildStreamUrl includes api token`() {
-        val url = MediaPlayer.buildStreamUrl(
-            serverUrl = "http://192.168.1.10:8096",
-            itemId = "abc123",
-            token = "mytoken",
-            transcode = false
+            mediaSourceId = "abc123"
         )
         assertTrue(url.contains("mytoken"))
+    }
+
+    @Test
+    fun `buildHlsFallbackUrl includes api token`() {
+        val url = MediaPlayer.buildHlsFallbackUrl(
+            serverUrl = "http://192.168.1.10:8096",
+            itemId = "abc123",
+            token = "mytoken"
+        )
+        assertTrue(url.contains("mytoken"))
+    }
+
+    @Test
+    fun `buildDirectPlayUrl includes mediaSourceId`() {
+        val url = MediaPlayer.buildDirectPlayUrl(
+            serverUrl = "http://192.168.1.10:8096",
+            itemId = "abc123",
+            token = "mytoken",
+            mediaSourceId = "source456"
+        )
+        assertTrue(url.contains("mediaSourceId=source456"))
+    }
+
+    @Test
+    fun `isAudioTrackError returns true for AUDIO_TRACK_INIT_FAILED`() {
+        val error = PlaybackException(
+            "audio init failed",
+            null,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
+        )
+        assertTrue(MediaPlayer.isAudioTrackError(error))
+    }
+
+    @Test
+    fun `isAudioTrackError returns true for AUDIO_TRACK_WRITE_FAILED`() {
+        val error = PlaybackException(
+            "audio write failed",
+            null,
+            PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+        )
+        assertTrue(MediaPlayer.isAudioTrackError(error))
+    }
+
+    @Test
+    fun `isAudioTrackError returns false for non-audio errors`() {
+        val error = PlaybackException(
+            "source error",
+            null,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+        )
+        assertFalse(MediaPlayer.isAudioTrackError(error))
     }
 }
