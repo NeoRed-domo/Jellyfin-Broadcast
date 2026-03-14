@@ -1,38 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/jellyfin_dark">
 
-    <ImageView
-        android:id="@+id/iv_qr_code"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:padding="32dp" />
-
-    <LinearLayout
-        android:id="@+id/menu_overlay"
+    <!-- Player behind everything (black when nothing is playing) -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/player_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:visibility="gone">
+        app:use_controller="false" />
 
-        <Button
-            android:id="@+id/btn_configure_this"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Configurer cet appareil"
-            android:backgroundTint="@color/jellyfin_blue"
-            android:layout_marginBottom="16dp" />
+    <ScrollView
+        android:id="@+id/content_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:background="#CC000000">
 
-        <Button
-            android:id="@+id/btn_scan_qr"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Scanner un QR code"
-            android:backgroundTint="@color/jellyfin_purple" />
-    </LinearLayout>
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:padding="24dp"
+            android:layout_gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Jellyfin Broadcast"
+                android:textColor="@color/jellyfin_blue"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <ImageView
+                android:id="@+id/iv_qr_code"
+                android:layout_width="220dp"
+                android:layout_height="220dp"
+                android:layout_marginBottom="24dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Scannez ce code pour configurer cet appareil"
+                android:textColor="@color/jellyfin_on_surface"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/btn_configure_this"
+                android:layout_width="240dp"
+                android:layout_height="wrap_content"
+                android:text="Configurer cet appareil"
+                android:backgroundTint="@color/jellyfin_blue"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btn_scan_qr"
+                android:layout_width="240dp"
+                android:layout_height="wrap_content"
+                android:text="Configurer une TV"
+                android:backgroundTint="@color/jellyfin_surface"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btn_broadcast_mode"
+                android:layout_width="240dp"
+                android:layout_height="wrap_content"
+                android:text="Mode diffusion"
+                android:backgroundTint="@color/jellyfin_purple"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
 </FrameLayout>

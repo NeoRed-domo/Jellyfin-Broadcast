@@ -1,5 +1,6 @@
 package com.jellyfinbroadcast.core
 
+import android.util.Log
 import kotlinx.coroutines.*
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.operations.PlayStateApi
@@ -11,9 +12,14 @@ import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.RepeatMode
 import java.util.UUID
 
-class PlaybackReporter(private val api: ApiClient) {
+class PlaybackReporter(
+    private val api: ApiClient,
+    private val playMethod: PlayMethod = PlayMethod.DIRECT_PLAY,
+    private val playSessionId: String? = null
+) {
 
     companion object {
+        private const val TAG = "PlaybackReporter"
         const val REPORT_INTERVAL_MS = 10_000L
         const val TICKS_PER_MS = 10_000L
 
@@ -47,16 +53,16 @@ class PlaybackReporter(private val api: ApiClient) {
                         volumeLevel = null,
                         brightness = null,
                         aspectRatio = null,
-                        playMethod = PlayMethod.DIRECT_PLAY,
+                        playMethod = this@PlaybackReporter.playMethod,
                         liveStreamId = null,
-                        playSessionId = null,
+                        playSessionId = this@PlaybackReporter.playSessionId,
                         repeatMode = RepeatMode.REPEAT_NONE,
                         playbackOrder = PlaybackOrder.DEFAULT,
                         nowPlayingQueue = emptyList(),
                         playlistItemId = null
                     )
                 )
-            }
+            }.onFailure { Log.w(TAG, "reportPlaybackStart failed: ${it.message}") }
         }
     }
 
@@ -71,38 +77,41 @@ class PlaybackReporter(private val api: ApiClient) {
         }
     }
 
-    private fun reportProgress() {
+    private suspend fun reportProgress() {
         val itemId = currentItemId ?: return
-        val posMs = getPositionMs?.invoke() ?: return
-        scope.launch {
-            runCatching {
-                playstateApi.reportPlaybackProgress(
-                    PlaybackProgressInfo(
-                        canSeek = true,
-                        item = null,
-                        itemId = itemId,
-                        sessionId = null,
-                        mediaSourceId = null,
-                        audioStreamIndex = null,
-                        subtitleStreamIndex = null,
-                        isPaused = getIsPausedState?.invoke() ?: false,
-                        isMuted = false,
-                        positionTicks = msToTicks(posMs),
-                        playbackStartTimeTicks = null,
-                        volumeLevel = null,
-                        brightness = null,
-                        aspectRatio = null,
-                        playMethod = PlayMethod.DIRECT_PLAY,
-                        liveStreamId = null,
-                        playSessionId = null,
-                        repeatMode = RepeatMode.REPEAT_NONE,
-                        playbackOrder = PlaybackOrder.DEFAULT,
-                        nowPlayingQueue = emptyList(),
-                        playlistItemId = null
-                    )
-                )
-            }
+        // Read ExoPlayer state on main thread (required by ExoPlayer)
+        val (posMs, isPaused) = withContext(Dispatchers.Main) {
+            val pos = getPositionMs?.invoke() ?: 0L
+            val paused = getIsPausedState?.invoke() ?: false
+            pos to paused
         }
+        runCatching {
+            playstateApi.reportPlaybackProgress(
+                PlaybackProgressInfo(
+                    canSeek = true,
+                    item = null,
+                    itemId = itemId,
+                    sessionId = null,
+                    mediaSourceId = null,
+                    audioStreamIndex = null,
+                    subtitleStreamIndex = null,
+                    isPaused = isPaused,
+                    isMuted = false,
+                    positionTicks = msToTicks(posMs),
+                    playbackStartTimeTicks = null,
+                    volumeLevel = null,
+                    brightness = null,
+                    aspectRatio = null,
+                    playMethod = this@PlaybackReporter.playMethod,
+                    liveStreamId = null,
+                    playSessionId = this@PlaybackReporter.playSessionId,
+                    repeatMode = RepeatMode.REPEAT_NONE,
+                    playbackOrder = PlaybackOrder.DEFAULT,
+                    nowPlayingQueue = emptyList(),
+                    playlistItemId = null
+                )
+            )
+        }.onFailure { Log.w(TAG, "reportProgress failed: ${it.message}") }
     }
 
     suspend fun reportPlaybackStop(positionMs: Long) {
@@ -117,14 +126,19 @@ class PlaybackReporter(private val api: ApiClient) {
                     mediaSourceId = null,
                     positionTicks = msToTicks(positionMs),
                     liveStreamId = null,
-                    playSessionId = null,
+                    playSessionId = this@PlaybackReporter.playSessionId,
                     failed = false,
                     nextMediaType = null,
                     playlistItemId = null,
                     nowPlayingQueue = emptyList()
                 )
             )
-        }
+        }.onFailure { Log.w(TAG, "reportPlaybackStop failed: ${it.message}") }
+    }
+
+    /** Send a progress report immediately (e.g. after pause/resume/seek) */
+    fun reportProgressNow() {
+        scope.launch { reportProgress() }
     }
 
     fun release() {

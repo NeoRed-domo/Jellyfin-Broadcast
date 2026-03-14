@@ -6,19 +6,27 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.jellyfinbroadcast.core.JellyfinSession
 import com.jellyfinbroadcast.databinding.FragmentConfigFormBinding
+import com.jellyfinbroadcast.discovery.JellyfinDiscovery
 import com.jellyfinbroadcast.server.ConfigPayload
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class ConfigFormFragment : Fragment() {
 
@@ -57,6 +65,51 @@ class ConfigFormFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         prefilledHost?.let { binding.etHost.setText(it) }
         binding.btnSend.setOnClickListener { sendConfig() }
+
+        if (tvIp != null) {
+            // Configuring a remote TV — fetch discovered server from TV's config server
+            fetchDiscoveredServerFromTv()
+        } else {
+            // Configuring this device locally — run mDNS discovery directly
+            discoverServerLocally()
+        }
+    }
+
+    private fun fetchDiscoveredServerFromTv() {
+        val targetIp = tvIp ?: return
+        lifecycleScope.launch {
+            try {
+                val response: HttpResponse = httpClient.get("http://$targetIp:$tvPort/server-info")
+                if (_binding == null) return@launch
+                if (response.status == HttpStatusCode.OK) {
+                    val body = response.bodyAsText()
+                    val json = Json.parseToJsonElement(body).jsonObject
+                    val host = json["host"]?.jsonPrimitive?.content
+                    val port = json["port"]?.jsonPrimitive?.int
+                    if (host != null && binding.etHost.text.isNullOrBlank()) {
+                        binding.etHost.setText(host)
+                    }
+                    if (port != null && port != 8096) {
+                        binding.etPort.setText(port.toString())
+                    }
+                }
+            } catch (_: Exception) {
+                // Server info not available, that's fine
+            }
+        }
+    }
+
+    private fun discoverServerLocally() {
+        lifecycleScope.launch {
+            val serverInfo = JellyfinDiscovery(requireContext()).discover()
+            if (_binding == null) return@launch
+            if (serverInfo != null && binding.etHost.text.isNullOrBlank()) {
+                binding.etHost.setText(serverInfo.host)
+                if (serverInfo.port != 8096) {
+                    binding.etPort.setText(serverInfo.port.toString())
+                }
+            }
+        }
     }
 
     private fun sendConfig() {
@@ -71,15 +124,17 @@ class ConfigFormFragment : Fragment() {
             return
         }
 
-        val targetIp = tvIp
-        if (targetIp == null) {
-            // Configure this device locally
-            binding.tvStatus.apply { text = "Configuration locale non implémentée"; visibility = View.VISIBLE }
-            return
+        if (tvIp != null) {
+            sendConfigToTv(payload)
+        } else {
+            sendConfigLocally(payload)
         }
+    }
 
+    private fun sendConfigToTv(payload: ConfigPayload) {
+        val targetIp = tvIp ?: return
         binding.btnSend.isEnabled = false
-        binding.tvStatus.apply { text = "Envoi en cours..."; visibility = View.VISIBLE }
+        binding.tvStatus.apply { text = "Configuration en cours..."; visibility = View.VISIBLE }
 
         lifecycleScope.launch {
             try {
@@ -89,14 +144,36 @@ class ConfigFormFragment : Fragment() {
                 }
                 if (_binding == null) return@launch
                 if (response.status == HttpStatusCode.OK) {
-                    binding.tvStatus.text = "Configuration envoyée ✓"
+                    binding.tvStatus.text = "Équipement distant configuré avec succès !"
+                    kotlinx.coroutines.delay(2000)
+                    if (_binding == null) return@launch
+                    (activity as? PhoneActivity)?.onTvConfigSuccess()
                 } else {
-                    binding.tvStatus.text = "Erreur : credentials invalides"
+                    val body = response.bodyAsText()
+                    binding.tvStatus.text = "Erreur : $body"
                     binding.btnSend.isEnabled = true
                 }
             } catch (e: Exception) {
                 if (_binding == null) return@launch
                 binding.tvStatus.text = "Erreur réseau : ${e.message}"
+                binding.btnSend.isEnabled = true
+            }
+        }
+    }
+
+    private fun sendConfigLocally(payload: ConfigPayload) {
+        binding.btnSend.isEnabled = false
+        binding.tvStatus.apply { text = "Connexion au serveur Jellyfin..."; visibility = View.VISIBLE }
+
+        lifecycleScope.launch {
+            val session = JellyfinSession(requireContext())
+            val error = session.authenticate(payload)
+            if (_binding == null) return@launch
+            if (error == null) {
+                (activity as? PhoneActivity)?.onLocalConfigSuccess()
+                return@launch
+            } else {
+                binding.tvStatus.text = "Erreur : $error"
                 binding.btnSend.isEnabled = true
             }
         }

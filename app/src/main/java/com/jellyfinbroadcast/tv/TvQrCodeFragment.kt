@@ -26,29 +26,46 @@ class TvQrCodeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        startDiscoveryAndServer()
+        startInitialization()
     }
 
-    private fun startDiscoveryAndServer() {
+    private fun startInitialization() {
+        // Phase 1: Show splash with spinner
+        binding.tvStatus.text = "Initialisation en cours..."
+        binding.progressBar.visibility = View.VISIBLE
+        binding.ivQrCode.visibility = View.GONE
+        binding.tvInstructions.visibility = View.GONE
+
+        // Capture activity reference eagerly (Ktor callback runs on IO thread where fragment.activity can be null)
+        val tvActivity = requireActivity() as TvActivity
         val server = ConfigServer { payload ->
-            (activity as? TvActivity)?.onConfigReceived(payload) ?: false
+            tvActivity.onConfigReceived(payload)
         }
         configServer = server
         server.start()
 
-        val localIp = NetworkUtils.getLocalIpAddress()
-        showQrCode(localIp, server.port)
-
-        binding.tvStatus.text = "Scanner ce QR code pour configurer"
+        // Phase 2: Run discovery, then show QR code
         lifecycleScope.launch {
             val serverInfo = JellyfinDiscovery(requireContext()).discover()
+
+            if (_binding == null) return@launch
+
+            // Store discovered server in ConfigServer so phone can fetch it
             if (serverInfo != null) {
+                server.discoveredHost = serverInfo.host
+                server.discoveredPort = serverInfo.port
                 (activity as? TvActivity)?.onServerDiscovered(serverInfo.host, serverInfo.port)
             }
+
+            // Show QR code
+            val localIp = NetworkUtils.getLocalIpAddress()
+            showQrCode(localIp, server.port)
         }
     }
 
     private fun showQrCode(ip: String, port: Int) {
+        binding.progressBar.visibility = View.GONE
+        binding.tvStatus.text = "Scannez ce QR code pour configurer"
         val bitmap = QrCodeGenerator.generate(ip, port)
         binding.ivQrCode.setImageBitmap(bitmap)
         binding.ivQrCode.visibility = View.VISIBLE

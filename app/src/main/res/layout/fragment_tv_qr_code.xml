@@ -13,12 +13,30 @@
         android:padding="32dp">
 
         <TextView
+            android:id="@+id/tv_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Jellyfin Broadcast"
+            android:textColor="@color/jellyfin_blue"
+            android:textSize="32sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
             android:id="@+id/tv_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Scanner ce QR code pour configurer"
+            android:text="Initialisation en cours..."
             android:textColor="@color/jellyfin_on_surface"
-            android:textSize="24sp"
+            android:textSize="18sp"
+            android:layout_marginBottom="24dp" />
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/jellyfin_blue"
             android:layout_marginBottom="24dp" />
 
         <ImageView

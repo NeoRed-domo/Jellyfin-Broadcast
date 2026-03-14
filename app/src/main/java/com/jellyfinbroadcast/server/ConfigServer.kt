@@ -9,14 +9,21 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
 import java.net.ServerSocket
 
+@Serializable
+data class DiscoveredServer(val host: String, val port: Int)
+
 class ConfigServer(
-    private val onConfigReceived: suspend (ConfigPayload) -> Boolean
+    private val onConfigReceived: suspend (ConfigPayload) -> String?
 ) {
     private var server: ApplicationEngine? = null
     var port: Int = 8765
         private set
+
+    var discoveredHost: String? = null
+    var discoveredPort: Int = 8096
 
     companion object {
         fun findAvailablePort(startPort: Int = 8765, maxPort: Int = 8775): Int {
@@ -34,17 +41,25 @@ class ConfigServer(
         server = embeddedServer(CIO, port = port) {
             install(ContentNegotiation) { json() }
             routing {
+                get("/server-info") {
+                    val host = discoveredHost
+                    if (host != null) {
+                        call.respond(DiscoveredServer(host, discoveredPort))
+                    } else {
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                }
                 post("/configure") {
                     val payload = runCatching { call.receive<ConfigPayload>() }.getOrNull()
                     if (payload == null || !payload.isValid()) {
                         call.respond(HttpStatusCode.BadRequest, "Invalid config")
                         return@post
                     }
-                    val success = onConfigReceived(payload)
-                    if (success) {
-                        call.respond(HttpStatusCode.OK, "Configuration applied")
+                    val error = onConfigReceived(payload)
+                    if (error == null) {
+                        call.respondText("Configuration applied", status = HttpStatusCode.OK)
                     } else {
-                        call.respond(HttpStatusCode.Unauthorized, "Invalid Jellyfin credentials")
+                        call.respondText(error, status = HttpStatusCode.UnprocessableEntity)
                     }
                 }
             }

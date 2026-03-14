@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/jellyfin_dark">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Jellyfin Broadcast"
+            android:textColor="@color/jellyfin_blue"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Connecté au serveur Jellyfin"
+            android:textColor="@color/jellyfin_on_surface"
+            android:textSize="16sp"
+            android:layout_marginBottom="32dp" />
+
+        <Button
+            android:id="@+id/btn_scan_tv"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:text="Configurer une TV"
+            android:backgroundTint="@color/jellyfin_blue"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/btn_reconfigure"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:text="Reconfigurer"
+            android:backgroundTint="@color/jellyfin_surface" />
+    </LinearLayout>
+</FrameLayout>

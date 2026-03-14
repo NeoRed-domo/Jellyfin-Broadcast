@@ -11,6 +11,7 @@ import org.jellyfin.sdk.api.operations.UserApi
 import org.jellyfin.sdk.model.ClientInfo
 import org.jellyfin.sdk.model.DeviceInfo
 import org.jellyfin.sdk.model.api.AuthenticateUserByName
+import java.util.UUID
 
 class JellyfinSession(private val context: Context) {
 
@@ -20,19 +21,12 @@ class JellyfinSession(private val context: Context) {
         const val CLIENT_VERSION = "1.0.0"
         const val DEFAULT_PORT = 8096
 
-        /**
-         * Builds a full server URL from [host] and [port].
-         * Preserves existing http:// or https:// scheme.
-         * Uses [DEFAULT_PORT] if [port] is 0.
-         * Does not append port if the host already contains one after the scheme.
-         */
         fun buildServerUrl(host: String, port: Int): String {
             val effectivePort = if (port > 0) port else DEFAULT_PORT
             return when {
                 host.startsWith("http://") || host.startsWith("https://") -> {
-                    // Check if host already has a port (e.g. "http://server:9000")
                     val afterScheme = host.substringAfter("://")
-                    if (afterScheme.contains(':')) host  // already has port
+                    if (afterScheme.contains(':')) host
                     else "$host:$effectivePort"
                 }
                 else -> "http://$host:$effectivePort"
@@ -41,27 +35,29 @@ class JellyfinSession(private val context: Context) {
     }
 
     private var api: ApiClient? = null
+    private var userId: UUID? = null
+    private val sessionStore = SessionStore(context)
 
-    /**
-     * Authenticates with the Jellyfin server using [config] credentials.
-     * @return `true` on success, `false` on failure (logs reason with Log.w)
-     */
-    suspend fun authenticate(config: ConfigPayload): Boolean {
+    // Pre-create Jellyfin instance once (avoids re-initialization on each call)
+    private val jellyfin: Jellyfin by lazy {
+        val deviceId = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown"
+        Jellyfin(JellyfinOptions.Builder().apply {
+            this.context = this@JellyfinSession.context
+            clientInfo = ClientInfo(name = CLIENT_NAME, version = CLIENT_VERSION)
+            deviceInfo = DeviceInfo(
+                id = deviceId,
+                name = "Jellyfin Broadcast - ${android.os.Build.MODEL}"
+            )
+        })
+    }
+
+    suspend fun authenticate(config: ConfigPayload): String? {
         return try {
-            val deviceId = android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                android.provider.Settings.Secure.ANDROID_ID
-            ) ?: "unknown"
-
-            val jellyfin = Jellyfin(JellyfinOptions.Builder().apply {
-                clientInfo = ClientInfo(name = CLIENT_NAME, version = CLIENT_VERSION)
-                deviceInfo = DeviceInfo(
-                    id = deviceId,
-                    name = "Jellyfin Broadcast - ${android.os.Build.MODEL}"
-                )
-            })
-
             val serverUrl = buildServerUrl(config.host, config.port)
+            Log.d(TAG, "Authenticating to $serverUrl as '${config.username}'")
             val client = jellyfin.createApi(baseUrl = serverUrl)
             val authApi = UserApi(client)
             val response = authApi.authenticateUserByName(
@@ -72,26 +68,55 @@ class JellyfinSession(private val context: Context) {
             )
             val token = response.content.accessToken
             if (token == null) {
-                Log.w(TAG, "Authentication succeeded but server returned null accessToken")
-                return false
+                val msg = "Serveur connecté mais token d'accès absent"
+                Log.w(TAG, msg)
+                return msg
             }
             client.update(accessToken = token)
             api = client
-            true
+            val uid = response.content.user?.id
+            userId = uid
+            sessionStore.save(serverUrl, token, config.host, config.port, uid?.toString())
+            Log.i(TAG, "Authenticated successfully, session saved (userId=$uid)")
+            null
         } catch (e: ApiClientException) {
-            Log.w(TAG, "Jellyfin auth failed (API error ${e.message})")
-            false
+            val msg = "Erreur API Jellyfin: ${e.message}"
+            Log.w(TAG, msg)
+            msg
         } catch (e: Exception) {
-            Log.w(TAG, "Jellyfin auth failed (${e.javaClass.simpleName}: ${e.message})")
+            val msg = "${e.javaClass.simpleName}: ${e.message}"
+            Log.w(TAG, "Jellyfin auth failed: $msg")
+            msg
+        }
+    }
+
+    suspend fun restoreSession(): Boolean {
+        if (!sessionStore.hasSavedSession()) return false
+        val serverUrl = sessionStore.getServerUrl()!!
+        val token = sessionStore.getAccessToken()!!
+        return try {
+            val client = jellyfin.createApi(baseUrl = serverUrl, accessToken = token)
+            val userApi = UserApi(client)
+            val currentUser = userApi.getCurrentUser()
+            api = client
+            userId = currentUser.content.id
+            Log.i(TAG, "Session restored from saved state (userId=$userId)")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Saved session invalid: ${e.message}")
+            sessionStore.clear()
             false
         }
     }
 
-    /** Returns the authenticated [ApiClient], or null if not authenticated. */
     fun getApi(): ApiClient? = api
 
-    /** Clears the current session. */
+    fun getUserId(): UUID? = userId
+
+    fun getServerUrl(): String? = sessionStore.getServerUrl()
+
     fun disconnect() {
         api = null
+        sessionStore.clear()
     }
 }
