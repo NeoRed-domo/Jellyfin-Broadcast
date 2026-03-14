@@ -23,13 +23,17 @@ class TvPlayerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val player = MediaPlayer(requireContext())
-        player.initialize()
+        player.initialize(enablePassthrough = true)
         mediaPlayer = player
         // Connect ExoPlayer instance to PlayerView
         binding.playerView.player = player.getExoPlayer()
     }
 
     fun getMediaPlayer(): MediaPlayer? = mediaPlayer
+
+    fun rebindPlayer(mediaPlayer: MediaPlayer) {
+        _binding?.playerView?.player = mediaPlayer.getExoPlayer()
+    }
 
     fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         return when (keyCode) {
