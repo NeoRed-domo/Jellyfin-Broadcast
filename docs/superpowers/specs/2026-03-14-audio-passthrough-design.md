@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-14
 **Status:** Approved
-**Scope:** MediaPlayer, TvActivity, PhoneActivity, DeviceProfileFactory
+**Scope:** MediaPlayer, TvActivity, DeviceProfileFactory
 
 ## Context
 
@@ -16,26 +16,28 @@ Jellyfin Broadcast uses Media3/ExoPlayer 1.3.1 for playback. Currently, all audi
 
 `MediaPlayer.initialize()` gains a parameter `enablePassthrough: Boolean = true`.
 
-**AudioAttributes:** Set `CONTENT_TYPE_MOVIE` + `USAGE_MEDIA` with `handleAudioFocus = true`. This signals Android that the content is media suitable for passthrough consideration.
+**AudioAttributes:** Set `CONTENT_TYPE_MOVIE` + `USAGE_MEDIA` with `handleAudioFocus = true`. This signals Android that the content is media suitable for passthrough consideration. Note: this is a behavioral change — audio focus handling is new and applies to all playback, not just passthrough. Must be tested independently.
 
-**Custom RenderersFactory:** Subclass `DefaultRenderersFactory` and override `buildAudioSink()` to inject `AudioCapabilities`:
+**Custom RenderersFactory:** Subclass `DefaultRenderersFactory` and override `buildAudioSink(Context, boolean, boolean, boolean)` to inject `AudioCapabilities` into a `DefaultAudioSink.Builder`:
 
 - `enablePassthrough = true` → `AudioCapabilities.getCapabilities(context)` — queries HDMI/EDID for supported encoded formats
-- `enablePassthrough = false` → `AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES` — PCM only, forces software decoding
+- `enablePassthrough = false` → omit `setAudioCapabilities()` on `DefaultAudioSink.Builder`, which defaults to PCM-only output (no passthrough). If `AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES` is available as a public constant in the Media3 version used, it can be passed explicitly instead.
+
+If the `buildAudioSink` override is not available in Media3 1.3.1, the alternative is to implement a custom `RenderersFactory` that builds `MediaCodecAudioRenderer` with a `DefaultAudioSink` constructed via `DefaultAudioSink.Builder().setAudioCapabilities(capabilities).build()`.
 
 **State tracking:** `isPassthroughEnabled()` exposes current mode for fallback logic.
 
-**Player recreation callback:** `onPlayerRecreated: ((ExoPlayer) -> Unit)?` allows the hosting Fragment to rebind its `PlayerView` after the player is re-initialized.
+**Player recreation callback:** `onPlayerRecreated: ((ExoPlayer) -> Unit)?` allows the hosting Fragment to rebind its `PlayerView` after the player is re-initialized. The callback implementation must guard against detached fragments (`fragment.isAdded && fragment.view != null`) before rebinding.
 
 **Default behavior unchanged:** `initialize()` defaults to `enablePassthrough = true`, so all existing call sites work without modification.
 
 ### 2. Fallback Chain
 
-The fallback logic lives in the Activities (TvActivity, PhoneActivity), which already orchestrate DirectPlay → HLS retries. A new intermediate step is inserted:
+The fallback logic lives in TvActivity, which already orchestrates DirectPlay → HLS retries. A new intermediate step is inserted:
 
 ```
 DirectPlay + Passthrough audio
-    ↓ audio error (ERROR_CODE_AUDIO_TRACK_INIT_FAILED / ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
+    ↓ audio error
 DirectPlay + PCM (same stream, player re-initialized without passthrough)
     ↓ non-audio error
 HLS Transcode (existing fallback, unchanged)
@@ -43,15 +45,22 @@ HLS Transcode (existing fallback, unchanged)
 
 **Error detection:** In the `onError` handler within `startPlayback()`:
 
-1. Check if `mediaPlayer.isPassthroughEnabled()` AND the error code is audio-related (`PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED` or `ERROR_CODE_AUDIO_TRACK_WRITE_FAILED`)
+1. Check if `mediaPlayer.isPassthroughEnabled()` AND the error code is audio-related:
+   - `PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED`
+   - `PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED`
+   - `PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED`
 2. If yes: call `mediaPlayer.initialize(enablePassthrough = false)`, rebind PlayerView via `onPlayerRecreated`, replay the same `StreamInfo` at the same position, log the fallback
 3. If no: proceed to existing HLS fallback (unchanged)
 
-**Position preservation:** On passthrough fallback, the current playback position is captured before re-init and restored via `seekTo()` after replay.
+**Position preservation:** On passthrough fallback, the current playback position is captured via `mediaPlayer.getCurrentPosition()` at the time of the error (not `startPositionMs`) and restored via `seekTo()` after replay.
+
+**HDMI disconnect during playback:** If the HDMI sink disappears mid-playback (cable unplugged, AVR powered off), the audio track write will fail, producing `ERROR_CODE_AUDIO_TRACK_WRITE_FAILED`. This is caught by the same error-code fallback above, which re-initializes with PCM. No separate `AudioCapabilitiesReceiver.Listener` needed — the existing error path covers this scenario.
+
+**PhoneActivity:** Phones/tablets are not connected to HDMI AVRs in normal usage. `PhoneActivity` calls `mediaPlayer.initialize(enablePassthrough = false)` unconditionally. This avoids dead fallback code on phone. If a phone is connected via USB-C to HDMI, the user can use the TV activity flow instead.
 
 ### 3. DeviceProfileFactory — Passthrough Detection
 
-Add `detectPassthroughCodecs(context): List<String>` using `AudioCapabilities.getCapabilities(context).supportsEncoding()`.
+Add `detectPassthroughCodecs(context): List<String>` that iterates over a map of Android encoding constants and tests each via `AudioCapabilities.getCapabilities(context).supportsEncoding(encoding)`.
 
 Tested encodings:
 
@@ -69,9 +78,10 @@ Tested encodings:
 
 ### 4. Testing
 
-- **MediaPlayer:** Verify `initialize(true)` and `initialize(false)` create the player correctly. Verify `isPassthroughEnabled()` reflects the parameter.
+- **MediaPlayer:** Verify `initialize(true)` and `initialize(false)` create the player correctly. Verify `isPassthroughEnabled()` reflects the parameter. These tests require Robolectric with shadowed ExoPlayer (consistent with existing test approach in `MediaPlayerTest.kt` which tests static methods only — passthrough init tests may be limited to verifying state flags rather than actual ExoPlayer internals).
 - **DeviceProfileFactory:** Verify `detectPassthroughCodecs()` returns a list (empty on emulator, populated on real device with HDMI).
-- **Fallback logic:** Verify audio error codes (`ERROR_CODE_AUDIO_TRACK_INIT_FAILED`) trigger PCM retry, and non-audio errors pass through to existing HLS fallback.
+- **Fallback logic:** Verify audio error codes (`ERROR_CODE_AUDIO_TRACK_INIT_FAILED`, `ERROR_CODE_AUDIO_TRACK_WRITE_FAILED`, `ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED`) are correctly identified as audio errors, and non-audio errors pass through to existing HLS fallback.
+- **AudioAttributes:** Verify audio focus handling doesn't break existing playback behavior.
 - **Existing tests:** Unaffected — `initialize()` default is `true`, same as current behavior (no passthrough config = ExoPlayer default).
 
 ## Files Modified
@@ -80,9 +90,9 @@ Tested encodings:
 |---|---|
 | `MediaPlayer.kt` | `AudioAttributes`, `enablePassthrough` param, custom `RenderersFactory`, `onPlayerRecreated` callback, `isPassthroughEnabled()` |
 | `TvActivity.kt` | `onError` handler: audio error + passthrough → re-init PCM + replay |
-| `PhoneActivity.kt` | Same fallback logic as TvActivity |
+| `PhoneActivity.kt` | Pass `enablePassthrough = false` to `initialize()` (no fallback logic) |
 | `DeviceProfileFactory.kt` | `detectPassthroughCodecs(context)` + logging in `build()` |
-| `MediaPlayerTest.kt` | New tests for passthrough init and fallback error detection |
+| `MediaPlayerTest.kt` | New tests for passthrough state and audio error code detection |
 
 ## Non-Goals
 
@@ -90,3 +100,4 @@ Tested encodings:
 - No changes to the Jellyfin device profile sent to the server
 - No changes to the HLS transcode fallback logic
 - No audio offload (DSP processing) — only HDMI passthrough
+- No `AudioCapabilitiesReceiver` listener (error fallback covers HDMI disconnect)
