@@ -1,28 +1,71 @@
 package com.jellyfinbroadcast.tv
 
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.jellyfinbroadcast.R
 import com.jellyfinbroadcast.core.AppEvent
 import com.jellyfinbroadcast.core.AppState
 import com.jellyfinbroadcast.core.AppStateMachine
+import com.jellyfinbroadcast.core.DeviceProfileFactory
 import com.jellyfinbroadcast.core.JellyfinSession
+import com.jellyfinbroadcast.core.MediaPlayer
+import com.jellyfinbroadcast.core.PlaybackReporter
+import com.jellyfinbroadcast.core.StreamInfo
 import com.jellyfinbroadcast.server.ConfigPayload
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.operations.MediaInfoApi
+import org.jellyfin.sdk.api.operations.SessionApi
+import org.jellyfin.sdk.api.sockets.SocketApi
+import org.jellyfin.sdk.api.sockets.subscribePlayStateCommands
+import org.jellyfin.sdk.model.api.ClientCapabilitiesDto
+import org.jellyfin.sdk.model.api.GeneralCommandType
+import org.jellyfin.sdk.model.api.MediaType
+import org.jellyfin.sdk.model.api.PlayCommand
+import org.jellyfin.sdk.model.api.PlayMessage
+import org.jellyfin.sdk.model.api.PlayMethod
+import org.jellyfin.sdk.model.api.PlaybackInfoDto
+import org.jellyfin.sdk.model.api.PlaystateCommand
+import org.jellyfin.sdk.model.api.PlaystateMessage
+import java.util.UUID
 
 class TvActivity : AppCompatActivity() {
 
+    companion object {
+        private const val TAG = "TvActivity"
+    }
+
     private val stateMachine = AppStateMachine()
-    private val jellyfinSession by lazy { JellyfinSession(this) }
+    val jellyfinSession by lazy { JellyfinSession(this) }
     private var discoveredHost: String? = null
+    private var playbackReporter: PlaybackReporter? = null
+    private var lastBackPressTime = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tv)
-        stateMachine.transition(AppEvent.StartDiscovery)
-        showQrCodeScreen()
+
+        lifecycleScope.launch {
+            val restored = jellyfinSession.restoreSession()
+            if (restored) {
+                Log.i(TAG, "Session restored, going to player")
+                stateMachine.transition(AppEvent.StartDiscovery)
+                stateMachine.transition(AppEvent.ConfigReceived)
+                val api = jellyfinSession.getApi()!!
+                postCapabilities(api)
+                withContext(Dispatchers.Main) { showPlayerScreen() }
+                startWebSocketListener(api)
+            } else {
+                stateMachine.transition(AppEvent.StartDiscovery)
+                showQrCodeScreen()
+            }
+        }
     }
 
     private fun showQrCodeScreen() {
@@ -37,35 +80,467 @@ class TvActivity : AppCompatActivity() {
             .commit()
     }
 
-    suspend fun onConfigReceived(payload: ConfigPayload): Boolean {
-        val success = jellyfinSession.authenticate(payload)
-        if (success) {
-            stateMachine.transition(AppEvent.ConfigReceived)
-            withContext(Dispatchers.Main) { showPlayerScreen() }
-        }
-        return success
+    private fun showQrCodeOverlay() {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.container, TvQrCodeFragment())
+            .addToBackStack("qr_overlay")
+            .commit()
     }
 
-    fun onServerDiscovered(host: String, port: Int) {
+    suspend fun onConfigReceived(payload: ConfigPayload): String? {
+        val error = jellyfinSession.authenticate(payload)
+        if (error == null) {
+            stateMachine.transition(AppEvent.ConfigReceived)
+            val api = jellyfinSession.getApi()!!
+            postCapabilities(api)
+            startWebSocketListener(api)
+            // Schedule navigation AFTER this function returns so the HTTP response is sent first
+            lifecycleScope.launch(Dispatchers.Main) {
+                kotlinx.coroutines.delay(200)
+                supportFragmentManager.popBackStack(null, androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE)
+                showPlayerScreen()
+            }
+        }
+        return error
+    }
+
+    private suspend fun postCapabilities(api: ApiClient) {
+        try {
+            val sessionApi = SessionApi(api)
+            sessionApi.postFullCapabilities(
+                data = ClientCapabilitiesDto(
+                    playableMediaTypes = listOf(MediaType.VIDEO, MediaType.AUDIO),
+                    supportedCommands = listOf(
+                        GeneralCommandType.PLAY_STATE,
+                        GeneralCommandType.PLAY_NEXT,
+                        GeneralCommandType.VOLUME_UP,
+                        GeneralCommandType.VOLUME_DOWN,
+                        GeneralCommandType.MUTE,
+                        GeneralCommandType.UNMUTE,
+                        GeneralCommandType.TOGGLE_MUTE,
+                        GeneralCommandType.SET_VOLUME
+                    ),
+                    supportsMediaControl = true,
+                    supportsPersistentIdentifier = true,
+                    deviceProfile = DeviceProfileFactory.build(this@TvActivity),
+                    appStoreUrl = null,
+                    iconUrl = null,
+                    supportsContentUploading = null,
+                    supportsSync = null
+                )
+            )
+            Log.i(TAG, "Session capabilities posted")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to post capabilities: ${e.message}")
+        }
+    }
+
+    private fun startWebSocketListener(api: ApiClient) {
+        val webSocket: SocketApi = api.webSocket
+
+        // Listen for Play commands (play an item)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                webSocket.subscribe(PlayMessage::class).collectLatest { message ->
+                    val data = message.data ?: return@collectLatest
+                    val items = data.itemIds ?: return@collectLatest
+                    Log.i(TAG, "Play command: ${data.playCommand}, items: $items")
+                    if (data.playCommand == PlayCommand.PLAY_NOW && items.isNotEmpty()) {
+                        val itemId = items.first()
+                        val startPositionTicks = data.startPositionTicks ?: 0L
+                        val startPositionMs = startPositionTicks / 10_000L
+                        withContext(Dispatchers.Main) {
+                            playItem(api, itemId, startPositionMs)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "WebSocket Play listener error: ${e.message}")
+            }
+        }
+
+        // Listen for Playstate commands (pause, stop, seek, etc.)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                webSocket.subscribePlayStateCommands().collectLatest { message ->
+                    val data = message.data ?: return@collectLatest
+                    val command = data.command
+                    Log.i(TAG, "Playstate command: $command")
+                    withContext(Dispatchers.Main) {
+                        handlePlaystateCommand(command, data.seekPositionTicks)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "WebSocket Playstate listener error: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun playItem(api: ApiClient, itemId: UUID, startPositionMs: Long) {
+        val playerFragment = supportFragmentManager
+            .findFragmentById(R.id.container) as? TvPlayerFragment
+        if (playerFragment == null) {
+            showPlayerScreen()
+            // Post to play after fragment is created
+            supportFragmentManager.executePendingTransactions()
+            val newFragment = supportFragmentManager
+                .findFragmentById(R.id.container) as? TvPlayerFragment
+            newFragment?.let { startPlayback(it, api, itemId, startPositionMs) }
+        } else {
+            startPlayback(playerFragment, api, itemId, startPositionMs)
+        }
+    }
+
+    private suspend fun resolveStreamInfo(
+        api: ApiClient,
+        itemId: UUID,
+        serverUrl: String,
+        token: String
+    ): StreamInfo {
+        val userId = jellyfinSession.getUserId()
+        if (userId == null) {
+            Log.w(TAG, "No userId available, falling back to HLS")
+            val url = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token)
+            return StreamInfo.HlsTranscode(url, null)
+        }
+        return try {
+            val mediaInfoApi = MediaInfoApi(api)
+            val profile = DeviceProfileFactory.build(this@TvActivity)
+            val response = mediaInfoApi.getPostedPlaybackInfo(
+                itemId = itemId,
+                data = PlaybackInfoDto(
+                    userId = userId,
+                    maxStreamingBitrate = 120_000_000,
+                    enableDirectPlay = true,
+                    enableDirectStream = true,
+                    enableTranscoding = true,
+                    allowVideoStreamCopy = true,
+                    allowAudioStreamCopy = true,
+                    autoOpenLiveStream = true,
+                    deviceProfile = profile
+                )
+            )
+            val source = response.content.mediaSources.firstOrNull()
+            val playSessionId = response.content.playSessionId
+            if (source?.supportsDirectPlay == true) {
+                val sourceId = source.id ?: itemId.toString()
+                val container = source.container
+                val url = MediaPlayer.buildDirectPlayUrl(serverUrl, itemId.toString(), token, sourceId, container)
+                val transcodeUrl = source.transcodingUrl?.let { "$serverUrl$it" }
+                Log.i(TAG, "Using DirectPlay for $itemId (source=$sourceId, container=$container, fallback=$transcodeUrl)")
+                StreamInfo.DirectPlay(url, playSessionId, transcodeUrl)
+            } else if (source?.transcodingUrl != null) {
+                Log.i(TAG, "Using HLS transcode for $itemId")
+                StreamInfo.HlsTranscode("$serverUrl${source.transcodingUrl}", playSessionId)
+            } else {
+                Log.w(TAG, "No direct play or transcode URL, using HLS fallback")
+                val sourceId = source?.id ?: itemId.toString().replace("-", "")
+                val url = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
+                StreamInfo.HlsTranscode(url, playSessionId)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get playback info: ${e.message}", e)
+            // Try DirectPlay first (device likely supports the codecs), with HLS as fallback
+            val sourceId = itemId.toString().replace("-", "")
+            val url = MediaPlayer.buildDirectPlayUrl(serverUrl, itemId.toString(), token, sourceId)
+            val hlsFallback = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
+            Log.i(TAG, "API failed, trying DirectPlay for $itemId (source=$sourceId)")
+            StreamInfo.DirectPlay(url, null, hlsFallback)
+        }
+    }
+
+    private suspend fun startPlayback(
+        fragment: TvPlayerFragment,
+        api: ApiClient,
+        itemId: UUID,
+        startPositionMs: Long
+    ) {
+        val serverUrl = jellyfinSession.getServerUrl() ?: return
+        val token = api.accessToken ?: return
+        val mediaPlayer = fragment.getMediaPlayer() ?: return
+
+        // Stop previous playback cleanly before starting new
+        mediaPlayer.stop()
+        playbackReporter?.release()
+        playbackReporter = null
+
+        // Determine playback method (direct play vs HLS transcode)
+        val streamInfo = withContext(Dispatchers.IO) {
+            resolveStreamInfo(api, itemId, serverUrl, token)
+        }
+
+        Log.i(TAG, "Playing: ${streamInfo.url} (${streamInfo::class.simpleName})")
+        mediaPlayer.play(streamInfo)
+        if (startPositionMs > 0) {
+            mediaPlayer.seekTo(startPositionMs)
+        }
+
+        stateMachine.transition(AppEvent.Play)
+
+        // Start playback reporter with correct play method
+        val reportPlayMethod = when (streamInfo) {
+            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+        }
+        val reporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId)
+        playbackReporter = reporter
+        reporter.reportPlaybackStart(itemId, startPositionMs)
+        reporter.startPeriodicReporting(
+            getPosition = { mediaPlayer.getCurrentPosition() },
+            getIsPaused = { !mediaPlayer.isPlaying() }
+        )
+
+        // Report progress after seek completes (not immediately)
+        mediaPlayer.onSeekCompleted = {
+            reporter.reportProgressNow()
+        }
+
+        // Callbacks run on main thread (ExoPlayer listener) — read position HERE, then report on IO
+        mediaPlayer.onPlaybackEnded = {
+            val posMs = mediaPlayer.getCurrentPosition()
+            lifecycleScope.launch(Dispatchers.IO) {
+                reporter.reportPlaybackStop(posMs)
+            }
+            stateMachine.transition(AppEvent.Stop)
+        }
+
+        mediaPlayer.onError = { error ->
+            Log.e(TAG, "Playback error: ${error.message}", error)
+            val posMs = mediaPlayer.getCurrentPosition()
+            lifecycleScope.launch(Dispatchers.IO) {
+                reporter.reportPlaybackStop(posMs)
+            }
+
+            if (mediaPlayer.isPassthroughEnabled() && MediaPlayer.isAudioTrackError(error)) {
+                // Audio passthrough failed → retry with PCM decoding (same stream)
+                Log.i(TAG, "Audio passthrough failed (${error.errorCode}), retrying with PCM decoding")
+                reporter.release()
+                mediaPlayer.initialize(enablePassthrough = false)
+                // Rebind PlayerView to the new ExoPlayer instance
+                val playerFrag = supportFragmentManager
+                    .findFragmentById(R.id.container) as? TvPlayerFragment
+                playerFrag?.rebindPlayer(mediaPlayer)
+                mediaPlayer.play(streamInfo)
+                if (posMs > 0) mediaPlayer.seekTo(posMs)
+
+                val pcmReporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId)
+                playbackReporter = pcmReporter
+                lifecycleScope.launch(Dispatchers.IO) {
+                    pcmReporter.reportPlaybackStart(itemId, posMs)
+                }
+                pcmReporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlaying() }
+                )
+                mediaPlayer.onSeekCompleted = { pcmReporter.reportProgressNow() }
+                mediaPlayer.onPlaybackEnded = {
+                    val endPos = mediaPlayer.getCurrentPosition()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        pcmReporter.reportPlaybackStop(endPos)
+                    }
+                    stateMachine.transition(AppEvent.Stop)
+                }
+                // PCM error → fall through to HLS
+                mediaPlayer.onError = { pcmError ->
+                    Log.e(TAG, "PCM playback also failed: ${pcmError.message}", pcmError)
+                    val pcmPos = mediaPlayer.getCurrentPosition()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        pcmReporter.reportPlaybackStop(pcmPos)
+                    }
+                    if (streamInfo is StreamInfo.DirectPlay) {
+                        val sourceId = itemId.toString().replace("-", "")
+                        val hlsUrl = streamInfo.serverTranscodeUrl
+                            ?: MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
+                        Log.i(TAG, "Falling back to HLS transcode")
+                        val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
+                        mediaPlayer.play(hlsStream)
+                        if (pcmPos > 0) mediaPlayer.seekTo(pcmPos)
+                        pcmReporter.release()
+                        val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId)
+                        playbackReporter = hlsReporter
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            hlsReporter.reportPlaybackStart(itemId, pcmPos)
+                        }
+                        hlsReporter.startPeriodicReporting(
+                            getPosition = { mediaPlayer.getCurrentPosition() },
+                            getIsPaused = { !mediaPlayer.isPlaying() }
+                        )
+                        mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
+                        mediaPlayer.onPlaybackEnded = {
+                            val hlsEndPos = mediaPlayer.getCurrentPosition()
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                hlsReporter.reportPlaybackStop(hlsEndPos)
+                            }
+                            stateMachine.transition(AppEvent.Stop)
+                        }
+                        mediaPlayer.onError = { hlsError ->
+                            Log.e(TAG, "HLS fallback also failed: ${hlsError.message}", hlsError)
+                            val hlsPos = mediaPlayer.getCurrentPosition()
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                hlsReporter.reportPlaybackStop(hlsPos)
+                            }
+                            stateMachine.transition(AppEvent.Stop)
+                        }
+                    } else {
+                        stateMachine.transition(AppEvent.Stop)
+                    }
+                }
+            } else if (streamInfo is StreamInfo.DirectPlay) {
+                // Non-audio error on DirectPlay: existing HLS fallback
+                val sourceId = itemId.toString().replace("-", "")
+                val hlsUrl = streamInfo.serverTranscodeUrl
+                    ?: MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
+                val source = if (streamInfo.serverTranscodeUrl != null) "server transcode" else "manual HLS fallback"
+                Log.i(TAG, "DirectPlay failed, falling back to $source")
+                val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
+                Log.i(TAG, "Retrying with $source: $hlsUrl")
+                mediaPlayer.play(hlsStream)
+                if (startPositionMs > 0) {
+                    mediaPlayer.seekTo(startPositionMs)
+                }
+                reporter.release()
+                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId)
+                playbackReporter = hlsReporter
+                lifecycleScope.launch(Dispatchers.IO) {
+                    hlsReporter.reportPlaybackStart(itemId, startPositionMs)
+                }
+                hlsReporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlaying() }
+                )
+                mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
+                mediaPlayer.onPlaybackEnded = {
+                    val hlsEndPos = mediaPlayer.getCurrentPosition()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        hlsReporter.reportPlaybackStop(hlsEndPos)
+                    }
+                    stateMachine.transition(AppEvent.Stop)
+                }
+                mediaPlayer.onError = { hlsError ->
+                    Log.e(TAG, "HLS fallback also failed: ${hlsError.message}", hlsError)
+                    val hlsPos = mediaPlayer.getCurrentPosition()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        hlsReporter.reportPlaybackStop(hlsPos)
+                    }
+                    stateMachine.transition(AppEvent.Stop)
+                }
+            } else {
+                stateMachine.transition(AppEvent.Stop)
+            }
+        }
+    }
+
+    private fun handlePlaystateCommand(command: PlaystateCommand, seekPositionTicks: Long?) {
+        val playerFragment = supportFragmentManager
+            .findFragmentById(R.id.container) as? TvPlayerFragment
+        val mediaPlayer = playerFragment?.getMediaPlayer() ?: return
+
+        when (command) {
+            PlaystateCommand.PAUSE -> {
+                mediaPlayer.pause()
+                stateMachine.transition(AppEvent.Pause)
+            }
+            PlaystateCommand.UNPAUSE -> {
+                mediaPlayer.resume()
+                stateMachine.transition(AppEvent.Play)
+            }
+            PlaystateCommand.STOP -> {
+                val posMs = mediaPlayer.getCurrentPosition()
+                mediaPlayer.stop()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    playbackReporter?.reportPlaybackStop(posMs)
+                }
+                stateMachine.transition(AppEvent.Stop)
+                return // No need for immediate progress report on stop
+            }
+            PlaystateCommand.SEEK -> {
+                val posMs = (seekPositionTicks ?: 0L) / 10_000L
+                mediaPlayer.seekTo(posMs)
+                return // Progress reported via onSeekCompleted callback
+            }
+            PlaystateCommand.PLAY_PAUSE -> {
+                if (mediaPlayer.isPlaying()) {
+                    mediaPlayer.pause()
+                    stateMachine.transition(AppEvent.Pause)
+                } else {
+                    mediaPlayer.resume()
+                    stateMachine.transition(AppEvent.Play)
+                }
+            }
+            PlaystateCommand.NEXT_TRACK -> Log.d(TAG, "NextTrack not implemented")
+            PlaystateCommand.PREVIOUS_TRACK -> Log.d(TAG, "PreviousTrack not implemented")
+            PlaystateCommand.REWIND -> {
+                val pos = mediaPlayer.getCurrentPosition()
+                mediaPlayer.seekTo(maxOf(0, pos - 10_000))
+                return // Progress reported via onSeekCompleted callback
+            }
+            PlaystateCommand.FAST_FORWARD -> {
+                val pos = mediaPlayer.getCurrentPosition()
+                mediaPlayer.seekTo(pos + 30_000)
+                return // Progress reported via onSeekCompleted callback
+            }
+        }
+        // Report state change immediately for non-seek commands
+        playbackReporter?.reportProgressNow()
+    }
+
+    fun onServerDiscovered(host: String, @Suppress("UNUSED_PARAMETER") port: Int) {
         discoveredHost = host
         stateMachine.transition(AppEvent.ServerFound(host))
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // Long press center D-pad from valid states → show QR code for reconfiguration
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
-            event.isLongPress &&
-            (stateMachine.currentState is AppState.CONFIGURED ||
-             stateMachine.currentState is AppState.PLAYING ||
-             stateMachine.currentState is AppState.PAUSED)
-        ) {
-            stateMachine.transition(AppEvent.ShowQrCode)
-            showQrCodeScreen()
+        // Track DPAD_CENTER to distinguish short press (play/pause) from long press (QR overlay)
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER && event.repeatCount == 0) {
+            event.startTracking()
             return true
         }
-        // Delegate to player fragment if playing
-        val playerFragment = supportFragmentManager.findFragmentById(R.id.container) as? TvPlayerFragment
+        val playerFragment = supportFragmentManager
+            .findFragmentById(R.id.container) as? TvPlayerFragment
         if (playerFragment?.onKeyDown(keyCode, event) == true) return true
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
+            stateMachine.currentState is AppState.CONFIGURED
+        ) {
+            showQrCodeOverlay()
+            return true
+        }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        // Short press DPAD_CENTER → toggle play/pause during playback
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
+            event.isTracking && !event.isCanceled &&
+            (stateMachine.currentState is AppState.PLAYING ||
+             stateMachine.currentState is AppState.PAUSED)
+        ) {
+            handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // If a QR overlay is on the back stack, just pop it
+        if (supportFragmentManager.backStackEntryCount > 0) {
+            supportFragmentManager.popBackStack()
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastBackPressTime < 2000) {
+            super.onBackPressed()
+        } else {
+            lastBackPressTime = now
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        playbackReporter?.release()
     }
 }
