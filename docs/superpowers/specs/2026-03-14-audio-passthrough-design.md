@@ -90,7 +90,7 @@ Tested encodings:
 |---|---|
 | `MediaPlayer.kt` | `AudioAttributes`, `enablePassthrough` param, custom `RenderersFactory`, `onPlayerRecreated` callback, `isPassthroughEnabled()` |
 | `TvActivity.kt` | `onError` handler: audio error + passthrough → re-init PCM + replay |
-| `PhoneActivity.kt` | Pass `enablePassthrough = false` to `initialize()` (no fallback logic) |
+| `PhoneQrCodeFragment.kt` | Pass `enablePassthrough = false` to `initialize()` (no fallback logic) |
 | `DeviceProfileFactory.kt` | `detectPassthroughCodecs(context)` + logging in `build()` |
 | `MediaPlayerTest.kt` | New tests for passthrough state and audio error code detection |
 
