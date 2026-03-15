@@ -616,7 +616,127 @@ git commit -m "feat: add playlist support to PhoneActivity (multi-item, transiti
 
 ---
 
-### Task 4: Build verification
+### Task 4: Fix remote control key handling (pause bug)
+
+**Files:**
+- Modify: `app/src/main/java/com/jellyfinbroadcast/tv/TvActivity.kt`
+- Modify: `app/src/main/java/com/jellyfinbroadcast/tv/TvPlayerFragment.kt`
+- Modify: `app/src/main/java/com/jellyfinbroadcast/phone/PhoneActivity.kt`
+
+**Bug:** `PlayerView.dispatchMediaKeyEvent()` intercepts `MEDIA_PLAY_PAUSE` before the Activity sees it, toggling ExoPlayer directly but bypassing state machine and reporter. Also `MEDIA_PAUSE`, `MEDIA_PLAY`, and `ENTER` keycodes are unhandled.
+
+**Fix:** Override `dispatchKeyEvent()` in TvActivity to intercept media keys BEFORE the View hierarchy. Remove dead code in TvPlayerFragment.
+
+- [ ] **Step 1: Add `dispatchKeyEvent()` override in TvActivity**
+
+Add before `onKeyDown()`:
+
+```kotlin
+override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_HEADSETHOOK -> {
+                if (stateMachine.currentState is AppState.PLAYING ||
+                    stateMachine.currentState is AppState.PAUSED
+                ) {
+                    handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
+                    return true
+                }
+            }
+        }
+    }
+    return super.dispatchKeyEvent(event)
+}
+```
+
+- [ ] **Step 2: Remove dead `onKeyDown` from TvPlayerFragment**
+
+In `TvPlayerFragment.kt`, remove the entire `onKeyDown()` method (lines 38-46):
+
+```kotlin
+// DELETE THIS:
+fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    return when (keyCode) {
+        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+            val mp = mediaPlayer ?: return false
+            if (mp.isPlaying()) mp.pause() else mp.resume()
+            true
+        }
+        else -> false
+    }
+}
+```
+
+Also remove the unused `import android.view.KeyEvent` from `TvPlayerFragment.kt`.
+
+- [ ] **Step 3: Remove TvPlayerFragment.onKeyDown call from TvActivity.onKeyDown**
+
+In `TvActivity.onKeyDown()`, remove lines 498-500:
+
+```kotlin
+// DELETE THESE LINES:
+val playerFragment = supportFragmentManager
+    .findFragmentById(R.id.container) as? TvPlayerFragment
+if (playerFragment?.onKeyDown(keyCode, event) == true) return true
+```
+
+The method becomes:
+
+```kotlin
+override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER && event.repeatCount == 0) {
+        event.startTracking()
+        return true
+    }
+    return super.onKeyDown(keyCode, event)
+}
+```
+
+- [ ] **Step 4: Add same `dispatchKeyEvent()` to PhoneActivity**
+
+In `PhoneActivity.kt`, add before `onBackPressed()`:
+
+```kotlin
+override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_HEADSETHOOK -> {
+                handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
+                return true
+            }
+        }
+    }
+    return super.dispatchKeyEvent(event)
+}
+```
+
+Add import at top of PhoneActivity.kt:
+
+```kotlin
+import android.view.KeyEvent
+```
+
+- [ ] **Step 5: Run tests**
+
+Run: `./gradlew testDebugUnitTest --info`
+Expected: ALL PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/src/main/java/com/jellyfinbroadcast/tv/TvActivity.kt app/src/main/java/com/jellyfinbroadcast/tv/TvPlayerFragment.kt app/src/main/java/com/jellyfinbroadcast/phone/PhoneActivity.kt
+git commit -m "fix: intercept media keys in dispatchKeyEvent to fix intermittent pause on remote"
+```
+
+---
+
+### Task 5: Build verification
 
 - [ ] **Step 1: Run all unit tests**
 
