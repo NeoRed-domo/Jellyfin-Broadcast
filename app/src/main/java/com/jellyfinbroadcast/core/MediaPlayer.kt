@@ -15,6 +15,7 @@ import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 
 sealed class StreamInfo {
@@ -84,7 +85,9 @@ class MediaPlayer(private val context: Context) {
     var onPlaybackEnded: (() -> Unit)? = null
     var onError: ((PlaybackException) -> Unit)? = null
     var onSeekCompleted: (() -> Unit)? = null
+    var onItemTransition: ((Int) -> Unit)? = null
 
+    private var currentSources: MutableList<MediaSource> = mutableListOf()
     private var passthroughEnabled = false
 
     fun isPassthroughEnabled(): Boolean = passthroughEnabled
@@ -138,28 +141,60 @@ class MediaPlayer(private val context: Context) {
                             onSeekCompleted?.invoke()
                         }
                     }
+
+                    override fun onMediaItemTransition(
+                        mediaItem: MediaItem?,
+                        @Player.MediaItemTransitionReason reason: Int
+                    ) {
+                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                            reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+                        ) {
+                            val index = player?.currentMediaItemIndex ?: 0
+                            onItemTransition?.invoke(index)
+                        }
+                    }
                 })
             }
     }
 
-    fun play(streamInfo: StreamInfo) {
+    @OptIn(UnstableApi::class)
+    private fun buildMediaSource(streamInfo: StreamInfo): MediaSource {
         val dataSourceFactory = DefaultDataSource.Factory(context)
-        val mediaSource = when (streamInfo) {
-            is StreamInfo.DirectPlay -> {
-                ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(streamInfo.url))
-            }
-            is StreamInfo.HlsTranscode -> {
-                HlsMediaSource.Factory(dataSourceFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(MediaItem.fromUri(streamInfo.url))
-            }
+        return when (streamInfo) {
+            is StreamInfo.DirectPlay -> ProgressiveMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(MediaItem.fromUri(streamInfo.url))
+            is StreamInfo.HlsTranscode -> HlsMediaSource.Factory(dataSourceFactory)
+                .setAllowChunklessPreparation(true)
+                .createMediaSource(MediaItem.fromUri(streamInfo.url))
         }
+    }
+
+    @OptIn(UnstableApi::class)
+    fun play(streamInfo: StreamInfo) {
+        val mediaSource = buildMediaSource(streamInfo)
+        currentSources = mutableListOf(mediaSource)
         player?.run {
             setMediaSource(mediaSource)
             prepare()
             playWhenReady = true
         }
+    }
+
+    @OptIn(UnstableApi::class)
+    fun playPlaylist(streamInfos: List<StreamInfo>) {
+        currentSources = streamInfos.map { buildMediaSource(it) }.toMutableList()
+        player?.run {
+            setMediaSources(currentSources)
+            prepare()
+            playWhenReady = true
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    fun replaceItem(index: Int, streamInfo: StreamInfo) {
+        if (index < 0 || index >= currentSources.size) return
+        currentSources[index] = buildMediaSource(streamInfo)
+        player?.setMediaSources(currentSources, index, 0)
     }
 
     fun pause() { player?.pause() }
@@ -171,6 +206,9 @@ class MediaPlayer(private val context: Context) {
     fun seekTo(positionMs: Long) { player?.seekTo(positionMs) }
     fun getCurrentPosition(): Long = player?.currentPosition ?: 0L
     fun isPlaying(): Boolean = player?.isPlaying ?: false
+    fun getCurrentItemIndex(): Int = player?.currentMediaItemIndex ?: 0
+    fun seekToItem(index: Int) { player?.seekTo(index, 0) }
+    fun getItemCount(): Int = player?.mediaItemCount ?: 0
 
     fun getExoPlayer(): ExoPlayer? = player
 
