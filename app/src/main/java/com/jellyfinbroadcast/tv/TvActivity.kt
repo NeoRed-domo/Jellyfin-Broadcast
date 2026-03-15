@@ -61,8 +61,7 @@ class TvActivity : AppCompatActivity() {
             val restored = jellyfinSession.restoreSession()
             if (restored) {
                 Log.i(TAG, "Session restored, going to player")
-                stateMachine.transition(AppEvent.StartDiscovery)
-                stateMachine.transition(AppEvent.ConfigReceived)
+                stateMachine.setState(AppState.CONFIGURED)
                 val api = jellyfinSession.getApi()!!
                 postCapabilities(api)
                 withContext(Dispatchers.Main) { showPlayerScreen() }
@@ -674,16 +673,10 @@ class TvActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_MEDIA_PAUSE,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_HEADSETHOOK -> {
-                // Consume both DOWN and UP to prevent PlayerView from handling media keys
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    Log.d(TAG, "Media key ${event.keyCode} DOWN, state=${stateMachine.currentState}")
-                    if (stateMachine.currentState is AppState.PLAYING ||
-                        stateMachine.currentState is AppState.PAUSED
-                    ) {
-                        handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
-                    }
+                    handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
                 }
-                return true // consume both DOWN and UP
+                return true
             }
         }
         return super.dispatchKeyEvent(event)
@@ -709,11 +702,9 @@ class TvActivity : AppCompatActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        // Short press DPAD_CENTER → toggle play/pause during playback
+        // Short press DPAD_CENTER → toggle play/pause
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER &&
-            event.isTracking && !event.isCanceled &&
-            (stateMachine.currentState is AppState.PLAYING ||
-             stateMachine.currentState is AppState.PAUSED)
+            event.isTracking && !event.isCanceled
         ) {
             handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
             return true
