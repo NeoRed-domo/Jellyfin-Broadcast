@@ -303,7 +303,7 @@ class TvActivity : AppCompatActivity() {
         }
 
         // Per-item error fallback
-        mediaPlayer.onError = { error ->
+        mediaPlayer.onError = onError@{ error ->
             Log.e(TAG, "Playlist item error: ${error.message}", error)
             val currentIndex = mediaPlayer.getCurrentItemIndex()
             val ids = playlistItemIds
@@ -668,15 +668,31 @@ class TvActivity : AppCompatActivity() {
         stateMachine.transition(AppEvent.ServerFound(host))
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_HEADSETHOOK -> {
+                    if (stateMachine.currentState is AppState.PLAYING ||
+                        stateMachine.currentState is AppState.PAUSED
+                    ) {
+                        handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         // Track DPAD_CENTER to distinguish short press (play/pause) from long press (QR overlay)
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER && event.repeatCount == 0) {
             event.startTracking()
             return true
         }
-        val playerFragment = supportFragmentManager
-            .findFragmentById(R.id.container) as? TvPlayerFragment
-        if (playerFragment?.onKeyDown(keyCode, event) == true) return true
         return super.onKeyDown(keyCode, event)
     }
 

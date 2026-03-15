@@ -2,6 +2,7 @@ package com.jellyfinbroadcast.phone
 
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -342,7 +343,7 @@ class PhoneActivity : AppCompatActivity() {
             playlistItemIds = null
         }
 
-        mediaPlayer.onError = { error ->
+        mediaPlayer.onError = onError@{ error ->
             Log.e(TAG, "Playlist item error: ${error.message}", error)
             val currentIndex = mediaPlayer.getCurrentItemIndex()
             val ids = playlistItemIds
@@ -583,6 +584,21 @@ class PhoneActivity : AppCompatActivity() {
         }
         // Report state change immediately for non-seek commands
         playbackReporter?.reportProgressNow()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_HEADSETHOOK -> {
+                    handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     @Suppress("DEPRECATION")

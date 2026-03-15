@@ -1,7 +1,6 @@
 package com.jellyfinbroadcast.tv
 
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,17 +32,6 @@ class TvPlayerFragment : Fragment() {
 
     fun rebindPlayer(mediaPlayer: MediaPlayer) {
         _binding?.playerView?.player = mediaPlayer.getExoPlayer()
-    }
-
-    fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        return when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                val mp = mediaPlayer ?: return false
-                if (mp.isPlaying()) mp.pause() else mp.resume()
-                true
-            }
-            else -> false
-        }
     }
 
     override fun onDestroyView() {
