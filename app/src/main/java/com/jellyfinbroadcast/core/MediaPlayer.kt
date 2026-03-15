@@ -194,7 +194,11 @@ class MediaPlayer(private val context: Context) {
     fun replaceItem(index: Int, streamInfo: StreamInfo) {
         if (index < 0 || index >= currentSources.size) return
         currentSources[index] = buildMediaSource(streamInfo)
-        player?.setMediaSources(currentSources, index, 0)
+        player?.run {
+            setMediaSources(currentSources, index, 0)
+            prepare()
+            playWhenReady = true
+        }
     }
 
     fun pause() { player?.pause() }
