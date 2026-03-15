@@ -630,7 +630,7 @@ class TvActivity : AppCompatActivity() {
                 return // Progress reported via onSeekCompleted callback
             }
             PlaystateCommand.PLAY_PAUSE -> {
-                if (mediaPlayer.isPlaying()) {
+                if (mediaPlayer.isPlayWhenReady()) {
                     mediaPlayer.pause()
                     stateMachine.transition(AppEvent.Pause)
                 } else {
@@ -669,19 +669,21 @@ class TvActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_HEADSETHOOK -> {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_HEADSETHOOK -> {
+                // Consume both DOWN and UP to prevent PlayerView from handling media keys
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    Log.d(TAG, "Media key ${event.keyCode} DOWN, state=${stateMachine.currentState}")
                     if (stateMachine.currentState is AppState.PLAYING ||
                         stateMachine.currentState is AppState.PAUSED
                     ) {
                         handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
-                        return true
                     }
                 }
+                return true // consume both DOWN and UP
             }
         }
         return super.dispatchKeyEvent(event)

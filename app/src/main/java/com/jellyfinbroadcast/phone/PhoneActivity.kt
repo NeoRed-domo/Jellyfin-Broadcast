@@ -559,7 +559,7 @@ class PhoneActivity : AppCompatActivity() {
                 return // Progress reported via onSeekCompleted callback
             }
             PlaystateCommand.PLAY_PAUSE -> {
-                if (mediaPlayer.isPlaying()) mediaPlayer.pause() else mediaPlayer.resume()
+                if (mediaPlayer.isPlayWhenReady()) mediaPlayer.pause() else mediaPlayer.resume()
             }
             PlaystateCommand.NEXT_TRACK -> {
                 if (mediaPlayer.getItemCount() > 1) {
@@ -587,15 +587,15 @@ class PhoneActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-            when (event.keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_PLAY,
-                KeyEvent.KEYCODE_HEADSETHOOK -> {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_HEADSETHOOK -> {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                     handlePlaystateCommand(PlaystateCommand.PLAY_PAUSE, null)
-                    return true
                 }
+                return true // consume both DOWN and UP
             }
         }
         return super.dispatchKeyEvent(event)

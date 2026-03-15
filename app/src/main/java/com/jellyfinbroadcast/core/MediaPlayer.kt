@@ -210,6 +210,7 @@ class MediaPlayer(private val context: Context) {
     fun seekTo(positionMs: Long) { player?.seekTo(positionMs) }
     fun getCurrentPosition(): Long = player?.currentPosition ?: 0L
     fun isPlaying(): Boolean = player?.isPlaying ?: false
+    fun isPlayWhenReady(): Boolean = player?.playWhenReady ?: false
     fun getCurrentItemIndex(): Int = player?.currentMediaItemIndex ?: 0
     fun seekToItem(index: Int) { player?.seekTo(index, 0) }
     fun getItemCount(): Int = player?.mediaItemCount ?: 0
