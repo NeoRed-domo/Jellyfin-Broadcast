@@ -18,9 +18,12 @@ import com.jellyfinbroadcast.core.SessionStore
 import com.jellyfinbroadcast.core.StreamInfo
 import com.jellyfinbroadcast.server.ConfigPayload
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.operations.MediaInfoApi
 import org.jellyfin.sdk.api.operations.SessionApi
@@ -46,6 +49,9 @@ class PhoneActivity : AppCompatActivity() {
     val jellyfinSession by lazy { JellyfinSession(this) }
     private var playbackReporter: PlaybackReporter? = null
     private var lastBackPressTime = 0L
+    private var playlistStreamInfos: MutableList<StreamInfo>? = null
+    private var playlistItemIds: List<UUID>? = null
+    private var playlistFailedCount = 0
 
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let { url ->
@@ -193,11 +199,14 @@ class PhoneActivity : AppCompatActivity() {
                     val items = data.itemIds ?: return@collectLatest
                     Log.i(TAG, "Play command: ${data.playCommand}, items: $items")
                     if (data.playCommand == PlayCommand.PLAY_NOW && items.isNotEmpty()) {
-                        val itemId = items.first()
                         val startPositionTicks = data.startPositionTicks ?: 0L
                         val startPositionMs = startPositionTicks / 10_000L
                         withContext(Dispatchers.Main) {
-                            playItem(api, itemId, startPositionMs)
+                            if (items.size == 1) {
+                                playItem(api, items.first(), startPositionMs)
+                            } else {
+                                playPlaylist(api, items, startPositionMs)
+                            }
                         }
                     }
                 }
@@ -235,6 +244,149 @@ class PhoneActivity : AppCompatActivity() {
             newFragment?.let { startPlayback(it, api, itemId, startPositionMs) }
         } else {
             startPlayback(fragment, api, itemId, startPositionMs)
+        }
+    }
+
+    private suspend fun playPlaylist(api: ApiClient, itemIds: List<UUID>, startPositionMs: Long) {
+        val fragment = supportFragmentManager
+            .findFragmentById(R.id.container) as? PhoneQrCodeFragment
+            ?: run {
+                supportFragmentManager.popBackStack()
+                showIdleScreen()
+                supportFragmentManager.executePendingTransactions()
+                supportFragmentManager.findFragmentById(R.id.container) as? PhoneQrCodeFragment
+            }
+        val mediaPlayer = fragment?.getMediaPlayer() ?: return
+        val serverUrl = jellyfinSession.getServerUrl() ?: return
+        val token = api.accessToken ?: return
+
+        mediaPlayer.stop()
+        playbackReporter?.release()
+        playbackReporter = null
+        playlistFailedCount = 0
+
+        val streamInfos = withContext(Dispatchers.IO) {
+            itemIds.map { itemId ->
+                async {
+                    try {
+                        withTimeout(5000) {
+                            resolveStreamInfo(api, itemId, serverUrl, token)
+                        }
+                    } catch (_: Exception) {
+                        Log.w(TAG, "Timeout resolving stream for $itemId, using HLS fallback")
+                        val url = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token)
+                        StreamInfo.HlsTranscode(url, null) as StreamInfo
+                    }
+                }
+            }.awaitAll()
+        }
+
+        playlistStreamInfos = streamInfos.toMutableList()
+        playlistItemIds = itemIds
+
+        Log.i(TAG, "Playing playlist: ${itemIds.size} items")
+        mediaPlayer.playPlaylist(streamInfos)
+        if (startPositionMs > 0) {
+            mediaPlayer.seekTo(startPositionMs)
+        }
+
+        fragment.onPlaybackStarted()
+
+        val firstStream = streamInfos.first()
+        val reportPlayMethod = when (firstStream) {
+            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+        }
+        val reporter = PlaybackReporter(api, reportPlayMethod, firstStream.playSessionId)
+        playbackReporter = reporter
+        reporter.reportPlaybackStart(itemIds.first(), startPositionMs)
+        reporter.startPeriodicReporting(
+            getPosition = { mediaPlayer.getCurrentPosition() },
+            getIsPaused = { !mediaPlayer.isPlaying() }
+        )
+
+        mediaPlayer.onItemTransition = { newIndex ->
+            val ids = playlistItemIds
+            val streams = playlistStreamInfos
+            if (ids != null && streams != null && newIndex < ids.size) {
+                val posMs = mediaPlayer.getCurrentPosition()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    playbackReporter?.reportPlaybackStop(posMs)
+                }
+                playbackReporter?.release()
+
+                val stream = streams[newIndex]
+                val method = when (stream) {
+                    is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+                    is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+                }
+                val newReporter = PlaybackReporter(api, method, stream.playSessionId)
+                playbackReporter = newReporter
+                newReporter.reportPlaybackStart(ids[newIndex], 0)
+                newReporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlaying() }
+                )
+                Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
+            }
+        }
+
+        mediaPlayer.onSeekCompleted = { playbackReporter?.reportProgressNow() }
+
+        mediaPlayer.onPlaybackEnded = {
+            val posMs = mediaPlayer.getCurrentPosition()
+            lifecycleScope.launch(Dispatchers.IO) {
+                playbackReporter?.reportPlaybackStop(posMs)
+            }
+            playlistStreamInfos = null
+            playlistItemIds = null
+        }
+
+        mediaPlayer.onError = { error ->
+            Log.e(TAG, "Playlist item error: ${error.message}", error)
+            val currentIndex = mediaPlayer.getCurrentItemIndex()
+            val ids = playlistItemIds
+            val streams = playlistStreamInfos
+
+            if (ids == null || streams == null || currentIndex >= streams.size) return@onError
+
+            val posMs = mediaPlayer.getCurrentPosition()
+            lifecycleScope.launch(Dispatchers.IO) {
+                playbackReporter?.reportPlaybackStop(posMs)
+            }
+            playbackReporter?.release()
+
+            val currentStream = streams[currentIndex]
+            val itemId = ids[currentIndex]
+            val hlsUrl = when (currentStream) {
+                is StreamInfo.DirectPlay -> MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token)
+                is StreamInfo.HlsTranscode -> null
+            }
+
+            if (hlsUrl != null) {
+                Log.i(TAG, "Replacing playlist item $currentIndex with HLS fallback")
+                val hlsStream = StreamInfo.HlsTranscode(hlsUrl, currentStream.playSessionId)
+                streams[currentIndex] = hlsStream
+                mediaPlayer.replaceItem(currentIndex, hlsStream)
+
+                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId)
+                playbackReporter = hlsReporter
+                lifecycleScope.launch(Dispatchers.IO) {
+                    hlsReporter.reportPlaybackStart(itemId, 0)
+                }
+                hlsReporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlaying() }
+                )
+            } else {
+                playlistFailedCount++
+                if (playlistFailedCount >= ids.size) {
+                    Log.e(TAG, "All playlist items failed")
+                } else if (currentIndex + 1 < mediaPlayer.getItemCount()) {
+                    Log.i(TAG, "Skipping failed item $currentIndex")
+                    mediaPlayer.seekToItem(currentIndex + 1)
+                }
+            }
         }
     }
 
@@ -408,8 +560,16 @@ class PhoneActivity : AppCompatActivity() {
             PlaystateCommand.PLAY_PAUSE -> {
                 if (mediaPlayer.isPlaying()) mediaPlayer.pause() else mediaPlayer.resume()
             }
-            PlaystateCommand.NEXT_TRACK -> {}
-            PlaystateCommand.PREVIOUS_TRACK -> {}
+            PlaystateCommand.NEXT_TRACK -> {
+                if (mediaPlayer.getItemCount() > 1) {
+                    mediaPlayer.getExoPlayer()?.seekToNextMediaItem()
+                }
+            }
+            PlaystateCommand.PREVIOUS_TRACK -> {
+                if (mediaPlayer.getItemCount() > 1) {
+                    mediaPlayer.getExoPlayer()?.seekToPreviousMediaItem()
+                }
+            }
             PlaystateCommand.REWIND -> {
                 val pos = mediaPlayer.getCurrentPosition()
                 mediaPlayer.seekTo(maxOf(0, pos - 10_000))
