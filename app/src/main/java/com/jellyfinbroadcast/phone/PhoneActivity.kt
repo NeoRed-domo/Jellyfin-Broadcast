@@ -65,7 +65,8 @@ class PhoneActivity : AppCompatActivity() {
             if (match != null) {
                 val tvIp = match.groupValues[1]
                 val tvPort = match.groupValues[2].toIntOrNull() ?: 8765
-                showConfigForm(tvIp, tvPort)
+                val token = android.net.Uri.parse(url).getQueryParameter("token") ?: ""
+                showConfigForm(tvIp, tvPort, token = token)
             }
         }
     }
@@ -117,8 +118,8 @@ class PhoneActivity : AppCompatActivity() {
             .commit()
     }
 
-    fun showConfigForm(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null) {
-        val fragment = ConfigFormFragment.newInstance(tvIp, tvPort, prefilledHost)
+    fun showConfigForm(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null, token: String = "") {
+        val fragment = ConfigFormFragment.newInstance(tvIp, tvPort, prefilledHost, token)
         supportFragmentManager.beginTransaction()
             .replace(R.id.container, fragment)
             .addToBackStack(null)
@@ -201,40 +202,54 @@ class PhoneActivity : AppCompatActivity() {
         val webSocket: SocketApi = api.webSocket
 
         webSocketJobs += lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                webSocket.subscribe(PlayMessage::class).collectLatest { message ->
-                    val data = message.data ?: return@collectLatest
-                    val items = data.itemIds ?: return@collectLatest
-                    Log.i(TAG, "Play command: ${data.playCommand}, items: $items")
-                    if (data.playCommand == PlayCommand.PLAY_NOW && items.isNotEmpty()) {
-                        val startPositionTicks = data.startPositionTicks ?: 0L
-                        val startPositionMs = startPositionTicks / 10_000L
-                        withContext(Dispatchers.Main) {
-                            if (items.size == 1) {
-                                playItem(api, items.first(), startPositionMs)
-                            } else {
-                                playPlaylist(api, items, startPositionMs)
+            var backoffMs = 1000L
+            while (isActive) {
+                try {
+                    backoffMs = 1000L // reset on successful connection
+                    webSocket.subscribe(PlayMessage::class).collectLatest { message ->
+                        val data = message.data ?: return@collectLatest
+                        val items = data.itemIds ?: return@collectLatest
+                        Log.i(TAG, "Play command: ${data.playCommand}, items: $items")
+                        if (data.playCommand == PlayCommand.PLAY_NOW && items.isNotEmpty()) {
+                            val startPositionTicks = data.startPositionTicks ?: 0L
+                            val startPositionMs = startPositionTicks / 10_000L
+                            withContext(Dispatchers.Main) {
+                                if (items.size == 1) {
+                                    playItem(api, items.first(), startPositionMs)
+                                } else {
+                                    playPlaylist(api, items, startPositionMs)
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    if (!isActive) break
+                    Log.w(TAG, "WebSocket Play listener error: ${e.message}, reconnecting in ${backoffMs}ms")
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "WebSocket Play listener error: ${e.message}")
             }
         }
 
         webSocketJobs += lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                webSocket.subscribePlayStateCommands().collectLatest { message ->
-                    val data = message.data ?: return@collectLatest
-                    val command = data.command
-                    Log.i(TAG, "Playstate command: $command")
-                    withContext(Dispatchers.Main) {
-                        handlePlaystateCommand(command, data.seekPositionTicks)
+            var backoffMs = 1000L
+            while (isActive) {
+                try {
+                    backoffMs = 1000L // reset on successful connection
+                    webSocket.subscribePlayStateCommands().collectLatest { message ->
+                        val data = message.data ?: return@collectLatest
+                        val command = data.command
+                        Log.i(TAG, "Playstate command: $command")
+                        withContext(Dispatchers.Main) {
+                            handlePlaystateCommand(command, data.seekPositionTicks)
+                        }
                     }
+                } catch (e: Exception) {
+                    if (!isActive) break
+                    Log.w(TAG, "WebSocket Playstate listener error: ${e.message}, reconnecting in ${backoffMs}ms")
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "WebSocket Playstate listener error: ${e.message}")
             }
         }
     }
