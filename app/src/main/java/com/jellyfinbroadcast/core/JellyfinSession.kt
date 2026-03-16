@@ -23,13 +23,19 @@ class JellyfinSession(private val context: Context) {
 
         fun buildServerUrl(host: String, port: Int): String {
             val effectivePort = if (port > 0) port else DEFAULT_PORT
-            return when {
-                host.startsWith("http://") || host.startsWith("https://") -> {
-                    val afterScheme = host.substringAfter("://")
-                    if (afterScheme.contains(':')) host
-                    else "$host:$effectivePort"
-                }
-                else -> "http://$host:$effectivePort"
+            val trimmed = host.trimEnd('/')
+            return try {
+                val uri = java.net.URI(
+                    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed
+                    else "http://$trimmed"
+                )
+                val scheme = uri.scheme ?: "http"
+                val uriHost = uri.host ?: trimmed
+                val uriPort = if (uri.port > 0) uri.port else effectivePort
+                val path = uri.path?.trimEnd('/') ?: ""
+                java.net.URI(scheme, null, uriHost, uriPort, path.ifEmpty { null }, null, null).toString()
+            } catch (_: Exception) {
+                "http://$trimmed:$effectivePort"
             }
         }
     }
