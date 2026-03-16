@@ -54,3 +54,8 @@ google-services.json
 
 # Signing files
 keystore.properties
+
+# Release keystore (NEVER commit)
+release-keystore.jks
+*.jks
+*.keystore
