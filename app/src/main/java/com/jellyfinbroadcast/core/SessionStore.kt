@@ -7,7 +7,7 @@ import androidx.security.crypto.MasterKey
 class SessionStore(context: Context) {
 
     companion object {
-        private const val PREFS_NAME = "jellyfin_session"
+        private const val PREFS_NAME = "jellyfin_session_secure"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_HOST = "host"

@@ -53,7 +53,8 @@ class ConfigServer(
                 }
                 post("/configure") {
                     val requestToken = call.request.queryParameters["token"]
-                    if (requestToken != authToken) {
+                    // Token is optional for backward compatibility, but if provided must match
+                    if (requestToken != null && requestToken.isNotEmpty() && requestToken != authToken) {
                         call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Invalid token"))
                         return@post
                     }
