@@ -144,5 +144,8 @@ class PlaybackReporter(
     fun release() {
         reportingJob?.cancel()
         scope.cancel()
+        getPositionMs = null
+        getIsPausedState = null
+        currentItemId = null
     }
 }

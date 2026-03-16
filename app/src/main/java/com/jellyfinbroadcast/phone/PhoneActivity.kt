@@ -19,6 +19,7 @@ import com.jellyfinbroadcast.core.SessionStore
 import com.jellyfinbroadcast.core.StreamInfo
 import com.jellyfinbroadcast.server.ConfigPayload
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.collectLatest
@@ -53,6 +54,7 @@ class PhoneActivity : AppCompatActivity() {
     private var playlistStreamInfos: MutableList<StreamInfo>? = null
     private var playlistItemIds: List<UUID>? = null
     private var playlistFailedCount = 0
+    private var webSocketJobs: MutableList<Job> = mutableListOf()
 
     private val qrScanLauncher = registerForActivityResult(ScanContract()) { result ->
         result.contents?.let { url ->
@@ -191,9 +193,12 @@ class PhoneActivity : AppCompatActivity() {
     }
 
     private fun startWebSocketListener(api: ApiClient) {
+        webSocketJobs.forEach { it.cancel() }
+        webSocketJobs.clear()
+
         val webSocket: SocketApi = api.webSocket
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        webSocketJobs += lifecycleScope.launch(Dispatchers.IO) {
             try {
                 webSocket.subscribe(PlayMessage::class).collectLatest { message ->
                     val data = message.data ?: return@collectLatest
@@ -216,7 +221,7 @@ class PhoneActivity : AppCompatActivity() {
             }
         }
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        webSocketJobs += lifecycleScope.launch(Dispatchers.IO) {
             try {
                 webSocket.subscribePlayStateCommands().collectLatest { message ->
                     val data = message.data ?: return@collectLatest
@@ -230,6 +235,19 @@ class PhoneActivity : AppCompatActivity() {
                 Log.w(TAG, "WebSocket Playstate listener error: ${e.message}")
             }
         }
+    }
+
+    private fun cleanupPlaybackState(mediaPlayer: MediaPlayer) {
+        mediaPlayer.stop()
+        mediaPlayer.onItemTransition = null
+        mediaPlayer.onPlaybackEnded = null
+        mediaPlayer.onError = null
+        mediaPlayer.onSeekCompleted = null
+        playbackReporter?.release()
+        playbackReporter = null
+        playlistStreamInfos = null
+        playlistItemIds = null
+        playlistFailedCount = 0
     }
 
     private suspend fun playItem(api: ApiClient, itemId: UUID, startPositionMs: Long) {
@@ -261,10 +279,7 @@ class PhoneActivity : AppCompatActivity() {
         val serverUrl = jellyfinSession.getServerUrl() ?: return
         val token = api.accessToken ?: return
 
-        mediaPlayer.stop()
-        playbackReporter?.release()
-        playbackReporter = null
-        playlistFailedCount = 0
+        cleanupPlaybackState(mediaPlayer)
 
         val streamInfos = withContext(Dispatchers.IO) {
             itemIds.map { itemId ->
@@ -454,9 +469,7 @@ class PhoneActivity : AppCompatActivity() {
         val mediaPlayer = fragment.getMediaPlayer() ?: return
 
         // Stop previous playback cleanly before starting new
-        mediaPlayer.stop()
-        playbackReporter?.release()
-        playbackReporter = null
+        cleanupPlaybackState(mediaPlayer)
 
         // Determine playback method (direct play vs HLS transcode)
         val streamInfo = withContext(Dispatchers.IO) {
@@ -618,6 +631,9 @@ class PhoneActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        webSocketJobs.forEach { it.cancel() }
+        webSocketJobs.clear()
         playbackReporter?.release()
+        playbackReporter = null
     }
 }
