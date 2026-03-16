@@ -54,7 +54,7 @@ class PhoneQrCodeFragment : Fragment() {
         }
         configServer = server
         server.start()
-        showQrCode(server.port)
+        showQrCode(server.port, server.authToken)
         setupButtons()
 
         if (isConfigured) {
@@ -80,9 +80,9 @@ class PhoneQrCodeFragment : Fragment() {
         }
     }
 
-    private fun showQrCode(port: Int) {
+    private fun showQrCode(port: Int, token: String = "") {
         val ip = NetworkUtils.getLocalIpAddress()
-        val bitmap = QrCodeGenerator.generate(ip, port)
+        val bitmap = QrCodeGenerator.generate(ip, port, token = token)
         binding.ivQrCode.setImageBitmap(bitmap)
     }
 

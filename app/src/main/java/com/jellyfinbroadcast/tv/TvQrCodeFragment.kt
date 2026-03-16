@@ -59,14 +59,14 @@ class TvQrCodeFragment : Fragment() {
 
             // Show QR code
             val localIp = NetworkUtils.getLocalIpAddress()
-            showQrCode(localIp, server.port)
+            showQrCode(localIp, server.port, server.authToken)
         }
     }
 
-    private fun showQrCode(ip: String, port: Int) {
+    private fun showQrCode(ip: String, port: Int, token: String = "") {
         binding.progressBar.visibility = View.GONE
         binding.tvStatus.text = "Scannez ce QR code pour configurer"
-        val bitmap = QrCodeGenerator.generate(ip, port)
+        val bitmap = QrCodeGenerator.generate(ip, port, token = token)
         binding.ivQrCode.setImageBitmap(bitmap)
         binding.ivQrCode.visibility = View.VISIBLE
         binding.tvInstructions.visibility = View.VISIBLE

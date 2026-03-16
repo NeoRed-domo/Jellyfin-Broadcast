@@ -22,6 +22,8 @@ class ConfigServer(
     var port: Int = 8765
         private set
 
+    val authToken: String = java.util.UUID.randomUUID().toString()
+
     var discoveredHost: String? = null
     var discoveredPort: Int = 8096
 
@@ -50,6 +52,11 @@ class ConfigServer(
                     }
                 }
                 post("/configure") {
+                    val requestToken = call.request.queryParameters["token"]
+                    if (requestToken != authToken) {
+                        call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Invalid token"))
+                        return@post
+                    }
                     val payload = runCatching { call.receive<ConfigPayload>() }.getOrNull()
                     if (payload == null || !payload.isValid()) {
                         call.respond(HttpStatusCode.BadRequest, "Invalid config")

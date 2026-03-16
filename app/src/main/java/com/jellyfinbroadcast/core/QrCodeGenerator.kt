@@ -14,9 +14,10 @@ object QrCodeGenerator {
      * IPv6 addresses are wrapped in brackets per RFC 2732.
      * Already-bracketed addresses (starting with '[') are not double-wrapped.
      */
-    fun buildUrl(host: String, port: Int): String {
+    fun buildUrl(host: String, port: Int, token: String = ""): String {
         val formattedHost = if (host.contains(':') && !host.startsWith('[')) "[$host]" else host
-        return "http://$formattedHost:$port"
+        val base = "http://$formattedHost:$port"
+        return if (token.isNotEmpty()) "$base?token=$token" else base
     }
 
     /**
@@ -25,8 +26,8 @@ object QrCodeGenerator {
      * @throws WriterException if ZXing cannot encode the URL (e.g., data too large)
      */
     @Throws(WriterException::class)
-    fun generate(host: String, port: Int, size: Int = 512): Bitmap {
-        val url = buildUrl(host, port)
+    fun generate(host: String, port: Int, size: Int = 512, token: String = ""): Bitmap {
+        val url = buildUrl(host, port, token)
         val hints = mapOf(EncodeHintType.MARGIN to 1)
         val bits = QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, size, size, hints)
         val pixels = IntArray(size * size) { i ->

@@ -6,7 +6,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.jellyfinbroadcast.core.JellyfinSession
 import com.jellyfinbroadcast.databinding.FragmentConfigFormBinding
 import com.jellyfinbroadcast.discovery.JellyfinDiscovery
 import com.jellyfinbroadcast.server.ConfigPayload
@@ -36,6 +35,7 @@ class ConfigFormFragment : Fragment() {
     private val tvIp: String? get() = arguments?.getString(ARG_TV_IP)
     private val tvPort: Int get() = arguments?.getInt(ARG_TV_PORT) ?: 8765
     private val prefilledHost: String? get() = arguments?.getString(ARG_PREFILLED_HOST)
+    private val authToken: String get() = arguments?.getString(ARG_AUTH_TOKEN) ?: ""
 
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) { json() }
@@ -45,13 +45,15 @@ class ConfigFormFragment : Fragment() {
         private const val ARG_TV_IP = "tv_ip"
         private const val ARG_TV_PORT = "tv_port"
         private const val ARG_PREFILLED_HOST = "prefilled_host"
+        private const val ARG_AUTH_TOKEN = "auth_token"
 
-        fun newInstance(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null) =
+        fun newInstance(tvIp: String?, tvPort: Int = 8765, prefilledHost: String? = null, token: String = "") =
             ConfigFormFragment().apply {
                 arguments = Bundle().apply {
                     putString(ARG_TV_IP, tvIp)
                     putInt(ARG_TV_PORT, tvPort)
                     putString(ARG_PREFILLED_HOST, prefilledHost)
+                    putString(ARG_AUTH_TOKEN, token)
                 }
             }
     }
@@ -138,7 +140,8 @@ class ConfigFormFragment : Fragment() {
 
         lifecycleScope.launch {
             try {
-                val response: HttpResponse = httpClient.post("http://$targetIp:$tvPort/configure") {
+                val tokenParam = if (authToken.isNotEmpty()) "?token=$authToken" else ""
+                val response: HttpResponse = httpClient.post("http://$targetIp:$tvPort/configure$tokenParam") {
                     contentType(ContentType.Application.Json)
                     setBody(payload)
                 }
@@ -166,7 +169,7 @@ class ConfigFormFragment : Fragment() {
         binding.tvStatus.apply { text = "Connexion au serveur Jellyfin..."; visibility = View.VISIBLE }
 
         lifecycleScope.launch {
-            val session = JellyfinSession(requireContext())
+            val session = (requireActivity() as PhoneActivity).jellyfinSession
             val error = session.authenticate(payload)
             if (_binding == null) return@launch
             if (error == null) {
