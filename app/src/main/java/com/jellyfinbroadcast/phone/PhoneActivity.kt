@@ -22,7 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -326,10 +328,11 @@ class PhoneActivity : AppCompatActivity() {
             val streams = playlistStreamInfos
             if (ids != null && streams != null && newIndex < ids.size) {
                 val posMs = mediaPlayer.getCurrentPosition()
+                val oldReporter = playbackReporter
                 lifecycleScope.launch(Dispatchers.IO) {
-                    playbackReporter?.reportPlaybackStop(posMs)
+                    oldReporter?.reportPlaybackStop(posMs)
+                    oldReporter?.release()
                 }
-                playbackReporter?.release()
 
                 val stream = streams[newIndex]
                 val method = when (stream) {

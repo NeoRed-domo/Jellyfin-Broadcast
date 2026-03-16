@@ -11,4 +11,6 @@ data class ConfigPayload(
 ) {
     fun isValid(): Boolean =
         host.isNotBlank() && username.isNotBlank() && port > 0
+
+    override fun toString(): String = "ConfigPayload(host=$host, port=$port, username=$username, password=***)"
 }

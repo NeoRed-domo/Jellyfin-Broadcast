@@ -1,5 +1,6 @@
 package com.jellyfinbroadcast.core
 
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 
 sealed class AppState {
@@ -26,6 +27,7 @@ sealed class AppEvent {
 }
 
 class AppStateMachine {
+    @Volatile
     var currentState: AppState = AppState.INIT
         private set
 
@@ -48,7 +50,10 @@ class AppStateMachine {
             currentState is AppState.BUFFERING && event is AppEvent.BufferingEnd -> AppState.PLAYING
             (currentState is AppState.CONFIGURED || currentState is AppState.PLAYING ||
              currentState is AppState.PAUSED) && event is AppEvent.ShowQrCode -> AppState.QR_CODE()
-            else -> currentState
+            else -> {
+                Log.w("AppStateMachine", "Ignored event $event in state $currentState")
+                currentState
+            }
         }
     }
 }

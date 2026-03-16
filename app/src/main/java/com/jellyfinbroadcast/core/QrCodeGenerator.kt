@@ -1,6 +1,7 @@
 package com.jellyfinbroadcast.core
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.WriterException
@@ -28,13 +29,13 @@ object QrCodeGenerator {
         val url = buildUrl(host, port)
         val hints = mapOf(EncodeHintType.MARGIN to 1)
         val bits = QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, size, size, hints)
-        // RGB_565 bitmap (no alpha). Black = 0x0000, White = 0xFFFF in 16-bit.
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                bitmap.setPixel(x, y, if (bits[x, y]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
-            }
+        val pixels = IntArray(size * size) { i ->
+            val x = i % size
+            val y = i / size
+            if (bits.get(x, y)) Color.BLACK else Color.WHITE
         }
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(pixels, 0, size, 0, 0, size, size)
         return bitmap
     }
 }
