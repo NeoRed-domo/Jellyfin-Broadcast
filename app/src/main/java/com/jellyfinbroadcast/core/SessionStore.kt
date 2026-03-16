@@ -1,6 +1,8 @@
 package com.jellyfinbroadcast.core
 
 import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 class SessionStore(context: Context) {
 
@@ -13,7 +15,17 @@ class SessionStore(context: Context) {
         private const val KEY_USER_ID = "user_id"
     }
 
-    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val prefs = EncryptedSharedPreferences.create(
+        context,
+        PREFS_NAME,
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
 
     fun save(serverUrl: String, accessToken: String, host: String, port: Int, userId: String? = null) {
         prefs.edit()
