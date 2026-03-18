@@ -15,7 +15,8 @@ import java.util.UUID
 class PlaybackReporter(
     private val api: ApiClient,
     private val playMethod: PlayMethod = PlayMethod.DIRECT_PLAY,
-    private val playSessionId: String? = null
+    private val playSessionId: String? = null,
+    private val subtitleStreamIndex: Int? = null
 ) {
 
     companion object {
@@ -32,9 +33,12 @@ class PlaybackReporter(
     private var currentItemId: UUID? = null
     private var getPositionMs: (() -> Long)? = null
     private var getIsPausedState: (() -> Boolean)? = null
+    @Volatile var lastKnownPositionMs: Long = 0
+        private set
 
     fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
+        lastKnownPositionMs = positionMs
         scope.launch {
             runCatching {
                 playstateApi.reportPlaybackStart(
@@ -45,7 +49,7 @@ class PlaybackReporter(
                         sessionId = null,
                         mediaSourceId = null,
                         audioStreamIndex = null,
-                        subtitleStreamIndex = null,
+                        subtitleStreamIndex = this@PlaybackReporter.subtitleStreamIndex,
                         isPaused = false,
                         isMuted = false,
                         positionTicks = msToTicks(positionMs),
@@ -85,6 +89,7 @@ class PlaybackReporter(
             val paused = getIsPausedState?.invoke() ?: false
             pos to paused
         }
+        lastKnownPositionMs = posMs
         runCatching {
             playstateApi.reportPlaybackProgress(
                 PlaybackProgressInfo(

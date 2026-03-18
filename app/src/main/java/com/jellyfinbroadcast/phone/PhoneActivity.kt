@@ -343,10 +343,10 @@ class PhoneActivity : AppCompatActivity() {
             val ids = playlistItemIds
             val streams = playlistStreamInfos
             if (ids != null && streams != null && newIndex < ids.size) {
-                val posMs = mediaPlayer.getCurrentPosition()
                 val oldReporter = playbackReporter
+                val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
                 lifecycleScope.launch(Dispatchers.IO) {
-                    oldReporter?.reportPlaybackStop(posMs)
+                    oldReporter?.reportPlaybackStop(endPosMs)
                     oldReporter?.release()
                 }
 
