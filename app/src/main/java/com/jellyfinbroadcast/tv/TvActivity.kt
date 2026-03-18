@@ -367,7 +367,7 @@ class TvActivity : AppCompatActivity() {
                 Log.i(TAG, "Replacing playlist item $currentIndex with HLS fallback")
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, currentStream.playSessionId)
                 streams[currentIndex] = hlsStream
-                mediaPlayer.replaceItem(currentIndex, hlsStream)
+                mediaPlayer.replaceItem(currentIndex, hlsStream, posMs)
 
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
@@ -552,8 +552,7 @@ class TvActivity : AppCompatActivity() {
                 val playerFrag = supportFragmentManager
                     .findFragmentById(R.id.container) as? TvPlayerFragment
                 playerFrag?.rebindPlayer(mediaPlayer)
-                mediaPlayer.play(streamInfo)
-                if (posMs > 0) mediaPlayer.seekTo(posMs)
+                mediaPlayer.play(streamInfo, posMs)
 
                 val pcmReporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
                 playbackReporter = pcmReporter
@@ -585,8 +584,7 @@ class TvActivity : AppCompatActivity() {
                             ?: MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
                         Log.i(TAG, "Falling back to HLS transcode")
                         val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
-                        mediaPlayer.play(hlsStream)
-                        if (pcmPos > 0) mediaPlayer.seekTo(pcmPos)
+                        mediaPlayer.play(hlsStream, pcmPos)
                         pcmReporter.release()
                         val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                         playbackReporter = hlsReporter
@@ -626,10 +624,7 @@ class TvActivity : AppCompatActivity() {
                 Log.i(TAG, "DirectPlay failed, falling back to $source")
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
                 Log.i(TAG, "Retrying with $source: $hlsUrl")
-                mediaPlayer.play(hlsStream)
-                if (startPositionMs > 0) {
-                    mediaPlayer.seekTo(startPositionMs)
-                }
+                mediaPlayer.play(hlsStream, startPositionMs)
                 reporter.release()
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter

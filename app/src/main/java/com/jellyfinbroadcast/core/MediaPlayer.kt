@@ -211,32 +211,34 @@ class MediaPlayer(private val context: Context) {
     }
 
     @OptIn(UnstableApi::class)
-    fun play(streamInfo: StreamInfo) {
+    fun play(streamInfo: StreamInfo, startPositionMs: Long = 0) {
         val mediaSource = buildMediaSource(streamInfo)
         currentSources = mutableListOf(mediaSource)
         player?.run {
             setMediaSource(mediaSource)
+            if (startPositionMs > 0) seekTo(startPositionMs)
             prepare()
             playWhenReady = true
         }
     }
 
     @OptIn(UnstableApi::class)
-    fun playPlaylist(streamInfos: List<StreamInfo>) {
+    fun playPlaylist(streamInfos: List<StreamInfo>, startPositionMs: Long = 0) {
         currentSources = streamInfos.map { buildMediaSource(it) }.toMutableList()
         player?.run {
             setMediaSources(currentSources)
+            if (startPositionMs > 0) seekTo(startPositionMs)
             prepare()
             playWhenReady = true
         }
     }
 
     @OptIn(UnstableApi::class)
-    fun replaceItem(index: Int, streamInfo: StreamInfo) {
+    fun replaceItem(index: Int, streamInfo: StreamInfo, startPositionMs: Long = 0) {
         if (index < 0 || index >= currentSources.size) return
         currentSources[index] = buildMediaSource(streamInfo)
         player?.run {
-            setMediaSources(currentSources, index, 0)
+            setMediaSources(currentSources, index, startPositionMs)
             prepare()
             playWhenReady = true
         }

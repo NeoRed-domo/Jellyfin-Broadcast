@@ -402,7 +402,7 @@ class PhoneActivity : AppCompatActivity() {
                 Log.i(TAG, "Replacing playlist item $currentIndex with HLS fallback")
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, currentStream.playSessionId)
                 streams[currentIndex] = hlsStream
-                mediaPlayer.replaceItem(currentIndex, hlsStream)
+                mediaPlayer.replaceItem(currentIndex, hlsStream, posMs)
 
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
@@ -564,10 +564,7 @@ class PhoneActivity : AppCompatActivity() {
                 val hlsUrl = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token)
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
                 Log.i(TAG, "Retrying with HLS fallback: $hlsUrl")
-                mediaPlayer.play(hlsStream)
-                if (startPositionMs > 0) {
-                    mediaPlayer.seekTo(startPositionMs)
-                }
+                mediaPlayer.play(hlsStream, startPositionMs)
                 reporter.release()
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
