@@ -265,6 +265,7 @@ class PhoneActivity : AppCompatActivity() {
         playlistStreamInfos = null
         playlistItemIds = null
         playlistFailedCount = 0
+        // Phone doesn't use passthrough, no re-init needed
     }
 
     private suspend fun playItem(api: ApiClient, itemId: UUID, startPositionMs: Long) {
@@ -330,7 +331,7 @@ class PhoneActivity : AppCompatActivity() {
             is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
             is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
         }
-        val reporter = PlaybackReporter(api, reportPlayMethod, firstStream.playSessionId)
+        val reporter = PlaybackReporter(api, reportPlayMethod, firstStream.playSessionId, firstStream.subtitleStreamIndex)
         playbackReporter = reporter
         reporter.reportPlaybackStart(itemIds.first(), startPositionMs)
         reporter.startPeriodicReporting(
@@ -354,7 +355,7 @@ class PhoneActivity : AppCompatActivity() {
                     is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
                     is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
                 }
-                val newReporter = PlaybackReporter(api, method, stream.playSessionId)
+                val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
                 playbackReporter = newReporter
                 newReporter.reportPlaybackStart(ids[newIndex], 0)
                 newReporter.startPeriodicReporting(
@@ -403,7 +404,7 @@ class PhoneActivity : AppCompatActivity() {
                 streams[currentIndex] = hlsStream
                 mediaPlayer.replaceItem(currentIndex, hlsStream)
 
-                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId)
+                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
                 lifecycleScope.launch(Dispatchers.IO) {
                     hlsReporter.reportPlaybackStart(itemId, 0)
@@ -455,19 +456,40 @@ class PhoneActivity : AppCompatActivity() {
             )
             val source = response.content.mediaSources.firstOrNull()
             val playSessionId = response.content.playSessionId
+
+            // Find forced subtitle track
+            val forcedSub = source?.mediaStreams
+                ?.firstOrNull { it.type == org.jellyfin.sdk.model.api.MediaStreamType.SUBTITLE && it.isForced == true }
+            val subIndex = forcedSub?.index
+            if (subIndex != null) Log.i(TAG, "Found forced subtitle: index=$subIndex lang=${forcedSub.language} codec=${forcedSub.codec}")
+
             if (source?.supportsDirectPlay == true) {
                 val sourceId = source.id ?: itemId.toString()
                 val url = MediaPlayer.buildDirectPlayUrl(serverUrl, itemId.toString(), token, sourceId)
                 val transcodeUrl = source.transcodingUrl?.let { "$serverUrl$it" }
-                Log.i(TAG, "Using DirectPlay for $itemId (source=$sourceId, fallback=$transcodeUrl)")
-                StreamInfo.DirectPlay(url, playSessionId, transcodeUrl)
+                val extSubUrl = if (forcedSub?.deliveryMethod == org.jellyfin.sdk.model.api.SubtitleDeliveryMethod.EXTERNAL && forcedSub.deliveryUrl != null) {
+                    val subUrl = forcedSub.deliveryUrl!!
+                    if (subUrl.startsWith("http")) subUrl else "$serverUrl$subUrl"
+                } else null
+                val extSubMime = when (forcedSub?.codec?.lowercase()) {
+                    "srt", "subrip" -> "application/x-subrip"
+                    "vtt", "webvtt" -> "text/vtt"
+                    "ass", "ssa" -> "text/x-ssa"
+                    else -> null
+                }
+                Log.i(TAG, "Using DirectPlay for $itemId (source=$sourceId, forcedSub=$subIndex, extSub=$extSubUrl)")
+                StreamInfo.DirectPlay(url, playSessionId, subIndex, transcodeUrl, extSubUrl, extSubMime)
             } else if (source?.transcodingUrl != null) {
-                Log.i(TAG, "Using HLS transcode for $itemId")
-                StreamInfo.HlsTranscode("$serverUrl${source.transcodingUrl}", playSessionId)
+                var transcodeUrl = "$serverUrl${source.transcodingUrl}"
+                if (subIndex != null && !transcodeUrl.contains("SubtitleStreamIndex")) {
+                    transcodeUrl += "&SubtitleStreamIndex=$subIndex"
+                }
+                Log.i(TAG, "Using HLS transcode for $itemId (forcedSub=$subIndex)")
+                StreamInfo.HlsTranscode(transcodeUrl, playSessionId, subIndex)
             } else {
                 Log.w(TAG, "No direct play or transcode URL, using HLS fallback")
-                val url = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token)
-                StreamInfo.HlsTranscode(url, playSessionId)
+                val url = MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, subtitleStreamIndex = subIndex)
+                StreamInfo.HlsTranscode(url, playSessionId, subIndex)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get playback info, falling back to HLS: ${e.message}")
@@ -508,7 +530,7 @@ class PhoneActivity : AppCompatActivity() {
             is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
             is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
         }
-        val reporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId)
+        val reporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
         playbackReporter = reporter
         reporter.reportPlaybackStart(itemId, startPositionMs)
         reporter.startPeriodicReporting(
@@ -547,7 +569,7 @@ class PhoneActivity : AppCompatActivity() {
                     mediaPlayer.seekTo(startPositionMs)
                 }
                 reporter.release()
-                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId)
+                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
                 lifecycleScope.launch(Dispatchers.IO) {
                     hlsReporter.reportPlaybackStart(itemId, startPositionMs)
@@ -579,9 +601,17 @@ class PhoneActivity : AppCompatActivity() {
             PlaystateCommand.STOP -> {
                 val posMs = mediaPlayer.getCurrentPosition()
                 mediaPlayer.stop()
+                mediaPlayer.onItemTransition = null
+                mediaPlayer.onPlaybackEnded = null
+                mediaPlayer.onError = null
+                mediaPlayer.onSeekCompleted = null
                 lifecycleScope.launch(Dispatchers.IO) {
                     playbackReporter?.reportPlaybackStop(posMs)
+                    playbackReporter?.release()
+                    playbackReporter = null
                 }
+                playlistStreamInfos = null
+                playlistItemIds = null
                 return
             }
             PlaystateCommand.SEEK -> {
@@ -648,10 +678,12 @@ class PhoneActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         webSocketJobs.forEach { it.cancel() }
         webSocketJobs.clear()
         playbackReporter?.release()
         playbackReporter = null
+        playlistStreamInfos = null
+        playlistItemIds = null
+        super.onDestroy()
     }
 }

@@ -1,12 +1,15 @@
 package com.jellyfinbroadcast.core
 
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -16,21 +19,28 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 
 sealed class StreamInfo {
     abstract val url: String
     abstract val playSessionId: String?
+    abstract val subtitleStreamIndex: Int?
 
     data class DirectPlay(
         override val url: String,
         override val playSessionId: String?,
-        val serverTranscodeUrl: String? = null
+        override val subtitleStreamIndex: Int? = null,
+        val serverTranscodeUrl: String? = null,
+        val externalSubtitleUrl: String? = null,
+        val externalSubtitleMimeType: String? = null
     ) : StreamInfo()
 
     data class HlsTranscode(
         override val url: String,
-        override val playSessionId: String?
+        override val playSessionId: String?,
+        override val subtitleStreamIndex: Int? = null
     ) : StreamInfo()
 }
 
@@ -55,10 +65,11 @@ class MediaPlayer(private val context: Context) {
             serverUrl: String,
             itemId: String,
             token: String,
-            mediaSourceId: String? = null
+            mediaSourceId: String? = null,
+            subtitleStreamIndex: Int? = null
         ): String {
             val sourceId = mediaSourceId ?: itemId.replace("-", "")
-            return "$serverUrl/Videos/$itemId/master.m3u8" +
+            var url = "$serverUrl/Videos/$itemId/master.m3u8" +
                 "?api_key=$token" +
                 "&MediaSourceId=$sourceId" +
                 "&VideoCodec=h264" +
@@ -68,6 +79,10 @@ class MediaPlayer(private val context: Context) {
                 "&MaxHeight=2160" +
                 "&TranscodingMaxAudioChannels=6" +
                 "&SegmentContainer=ts"
+            if (subtitleStreamIndex != null) {
+                url += "&SubtitleStreamIndex=$subtitleStreamIndex"
+            }
+            return url
         }
 
         private val AUDIO_TRACK_ERROR_CODES = setOf(
@@ -94,7 +109,11 @@ class MediaPlayer(private val context: Context) {
 
     @OptIn(UnstableApi::class)
     fun initialize(enablePassthrough: Boolean = true) {
+        player?.stop()
+        player?.clearMediaItems()
         player?.release()
+        player = null
+        currentSources.clear()
         passthroughEnabled = enablePassthrough
 
         val audioAttributes = AudioAttributes.Builder()
@@ -123,6 +142,11 @@ class MediaPlayer(private val context: Context) {
             .setAudioAttributes(audioAttributes, true)
             .build()
             .apply {
+                // Ensure forced subtitle tracks are selected even with undetermined language
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setSelectUndeterminedTextLanguage(true)
+                    .build()
+
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_ENDED) onPlaybackEnded?.invoke()
@@ -161,8 +185,25 @@ class MediaPlayer(private val context: Context) {
     private fun buildMediaSource(streamInfo: StreamInfo): MediaSource {
         val dataSourceFactory = DefaultDataSource.Factory(context)
         return when (streamInfo) {
-            is StreamInfo.DirectPlay -> ProgressiveMediaSource.Factory(dataSourceFactory)
-                .createMediaSource(MediaItem.fromUri(streamInfo.url))
+            is StreamInfo.DirectPlay -> {
+                val videoSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(streamInfo.url))
+                val extSubUrl = streamInfo.externalSubtitleUrl
+                if (extSubUrl != null) {
+                    val mimeType = streamInfo.externalSubtitleMimeType ?: MimeTypes.APPLICATION_SUBRIP
+                    val subtitleSource = SingleSampleMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(
+                            MediaItem.SubtitleConfiguration.Builder(Uri.parse(extSubUrl))
+                                .setMimeType(mimeType)
+                                .setSelectionFlags(C.SELECTION_FLAG_FORCED)
+                                .build(),
+                            C.TIME_UNSET
+                        )
+                    MergingMediaSource(videoSource, subtitleSource)
+                } else {
+                    videoSource
+                }
+            }
             is StreamInfo.HlsTranscode -> HlsMediaSource.Factory(dataSourceFactory)
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(MediaItem.fromUri(streamInfo.url))
@@ -218,7 +259,14 @@ class MediaPlayer(private val context: Context) {
     fun getExoPlayer(): ExoPlayer? = player
 
     fun release() {
+        onPlaybackEnded = null
+        onError = null
+        onSeekCompleted = null
+        onItemTransition = null
+        player?.stop()
+        player?.clearMediaItems()
         player?.release()
         player = null
+        currentSources.clear()
     }
 }
