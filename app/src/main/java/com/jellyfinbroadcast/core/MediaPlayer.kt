@@ -123,6 +123,11 @@ class MediaPlayer(private val context: Context) {
 
         val ctx = context
         val renderersFactory = object : DefaultRenderersFactory(ctx) {
+            init {
+                // Use FFmpeg audio decoders as fallback when platform decoders can't handle
+                // the codec (DTS, AC3, EAC3, TrueHD, etc.)
+                setExtensionRendererMode(EXTENSION_RENDERER_MODE_ON)
+            }
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,
