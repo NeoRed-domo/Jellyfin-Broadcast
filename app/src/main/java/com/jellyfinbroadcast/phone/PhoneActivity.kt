@@ -254,13 +254,41 @@ class PhoneActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Clean up all playback state and report stop to Jellyfin.
+     * Suspend version: waits for the stop report to reach the server before returning.
+     * This ensures correct ordering: stop(old) completes THEN start(new) is sent.
+     */
+    private suspend fun cleanupPlaybackStateAndReport(mediaPlayer: MediaPlayer) {
+        val posMs = mediaPlayer.getCurrentPosition()
+        val previousReporter = playbackReporter
+        mediaPlayer.stop()
+        mediaPlayer.onItemTransition = null
+        mediaPlayer.onPlaybackEnded = null
+        mediaPlayer.onPlaybackReady = null
+        mediaPlayer.onError = null
+        mediaPlayer.onSeekCompleted = null
+        playbackReporter = null
+        playlistStreamInfos = null
+        playlistItemIds = null
+        playlistFailedCount = 0
+        // Send stop for previous item and WAIT for it to complete
+        if (previousReporter != null) {
+            withContext(Dispatchers.IO) {
+                previousReporter.reportPlaybackStop(posMs)
+                previousReporter.release()
+            }
+        }
+    }
+
+    /** Quick cleanup without reporting (for STOP command which reports separately) */
     private fun cleanupPlaybackState(mediaPlayer: MediaPlayer) {
         mediaPlayer.stop()
         mediaPlayer.onItemTransition = null
         mediaPlayer.onPlaybackEnded = null
+        mediaPlayer.onPlaybackReady = null
         mediaPlayer.onError = null
         mediaPlayer.onSeekCompleted = null
-        playbackReporter?.release()
         playbackReporter = null
         playlistStreamInfos = null
         playlistItemIds = null
@@ -297,7 +325,8 @@ class PhoneActivity : AppCompatActivity() {
         val serverUrl = jellyfinSession.getServerUrl() ?: return
         val token = api.accessToken ?: return
 
-        cleanupPlaybackState(mediaPlayer)
+        // Stop previous playback and report stop to Jellyfin (waits for completion)
+        cleanupPlaybackStateAndReport(mediaPlayer)
 
         val streamInfos = withContext(Dispatchers.IO) {
             itemIds.map { itemId ->
@@ -318,14 +347,7 @@ class PhoneActivity : AppCompatActivity() {
         playlistStreamInfos = streamInfos.toMutableList()
         playlistItemIds = itemIds
 
-        Log.i(TAG, "Playing playlist: ${itemIds.size} items")
-        mediaPlayer.playPlaylist(streamInfos)
-        if (startPositionMs > 0) {
-            mediaPlayer.seekTo(startPositionMs)
-        }
-
-        fragment.onPlaybackStarted()
-
+        // Prepare reporter but DON'T report start yet
         val firstStream = streamInfos.first()
         val reportPlayMethod = when (firstStream) {
             is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
@@ -333,11 +355,24 @@ class PhoneActivity : AppCompatActivity() {
         }
         val reporter = PlaybackReporter(api, reportPlayMethod, firstStream.playSessionId, firstStream.subtitleStreamIndex)
         playbackReporter = reporter
-        reporter.reportPlaybackStart(itemIds.first(), startPositionMs)
-        reporter.startPeriodicReporting(
-            getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-        )
+
+        // Report start only when ExoPlayer is actually ready
+        mediaPlayer.onPlaybackReady = {
+            Log.i(TAG, "Playlist player ready, reporting start to Jellyfin")
+            reporter.reportPlaybackStart(itemIds.first(), mediaPlayer.getCurrentPosition())
+            reporter.startPeriodicReporting(
+                getPosition = { mediaPlayer.getCurrentPosition() },
+                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+            )
+        }
+
+        Log.i(TAG, "Playing playlist: ${itemIds.size} items")
+        mediaPlayer.playPlaylist(streamInfos)
+        if (startPositionMs > 0) {
+            mediaPlayer.seekTo(startPositionMs)
+        }
+
+        fragment.onPlaybackStarted()
 
         mediaPlayer.onItemTransition = { newIndex ->
             val ids = playlistItemIds
@@ -508,12 +543,30 @@ class PhoneActivity : AppCompatActivity() {
         val token = api.accessToken ?: return
         val mediaPlayer = fragment.getMediaPlayer() ?: return
 
-        // Stop previous playback cleanly before starting new
-        cleanupPlaybackState(mediaPlayer)
+        // Stop previous playback and report stop to Jellyfin (waits for completion)
+        cleanupPlaybackStateAndReport(mediaPlayer)
 
         // Determine playback method (direct play vs HLS transcode)
         val streamInfo = withContext(Dispatchers.IO) {
             resolveStreamInfo(api, itemId, serverUrl, token)
+        }
+
+        // Prepare reporter but DON'T report start yet — wait until player is actually ready
+        val reportPlayMethod = when (streamInfo) {
+            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+        }
+        val reporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
+        playbackReporter = reporter
+
+        // Report start only when ExoPlayer is actually ready to play
+        mediaPlayer.onPlaybackReady = {
+            Log.i(TAG, "Player ready, reporting start to Jellyfin")
+            reporter.reportPlaybackStart(itemId, mediaPlayer.getCurrentPosition())
+            reporter.startPeriodicReporting(
+                getPosition = { mediaPlayer.getCurrentPosition() },
+                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+            )
         }
 
         Log.i(TAG, "Playing: ${streamInfo.url} (${streamInfo::class.simpleName})")
@@ -524,19 +577,6 @@ class PhoneActivity : AppCompatActivity() {
 
         // Hide overlay to show video
         fragment.onPlaybackStarted()
-
-        // Start playback reporter with correct play method
-        val reportPlayMethod = when (streamInfo) {
-            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
-            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
-        }
-        val reporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
-        playbackReporter = reporter
-        reporter.reportPlaybackStart(itemId, startPositionMs)
-        reporter.startPeriodicReporting(
-            getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-        )
 
         // Report progress after seek completes (not immediately)
         mediaPlayer.onSeekCompleted = {
@@ -600,6 +640,7 @@ class PhoneActivity : AppCompatActivity() {
                 mediaPlayer.stop()
                 mediaPlayer.onItemTransition = null
                 mediaPlayer.onPlaybackEnded = null
+                mediaPlayer.onPlaybackReady = null
                 mediaPlayer.onError = null
                 mediaPlayer.onSeekCompleted = null
                 lifecycleScope.launch(Dispatchers.IO) {

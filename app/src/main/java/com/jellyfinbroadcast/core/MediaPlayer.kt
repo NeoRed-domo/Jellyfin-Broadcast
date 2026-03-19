@@ -98,6 +98,7 @@ class MediaPlayer(private val context: Context) {
     private var player: ExoPlayer? = null
 
     var onPlaybackEnded: (() -> Unit)? = null
+    var onPlaybackReady: (() -> Unit)? = null
     var onError: ((PlaybackException) -> Unit)? = null
     var onSeekCompleted: (() -> Unit)? = null
     var onItemTransition: ((Int) -> Unit)? = null
@@ -154,7 +155,13 @@ class MediaPlayer(private val context: Context) {
 
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_ENDED) onPlaybackEnded?.invoke()
+                        when (state) {
+                            Player.STATE_READY -> {
+                                onPlaybackReady?.invoke()
+                                onPlaybackReady = null // one-shot
+                            }
+                            Player.STATE_ENDED -> onPlaybackEnded?.invoke()
+                        }
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
@@ -267,6 +274,7 @@ class MediaPlayer(private val context: Context) {
 
     fun release() {
         onPlaybackEnded = null
+        onPlaybackReady = null
         onError = null
         onSeekCompleted = null
         onItemTransition = null
