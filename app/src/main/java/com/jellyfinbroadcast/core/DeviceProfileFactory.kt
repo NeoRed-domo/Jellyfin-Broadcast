@@ -107,14 +107,15 @@ object DeviceProfileFactory {
             }
 
             // HLS transcode fallback when direct play is not possible
+            // Include all FFmpeg codecs so Jellyfin copies audio instead of re-encoding
             transcodingProfile {
                 type = DlnaProfileType.VIDEO
                 this.context = EncodingContext.STREAMING
                 protocol = MediaStreamProtocol.HLS
                 container = "ts"
                 videoCodec("h264")
-                audioCodec("aac", "ac3")
-                maxAudioChannels = "6"
+                audioCodec("aac", "ac3", "eac3", "dts", "truehd", "mp3", "flac", "opus", "vorbis")
+                maxAudioChannels = "8"
                 breakOnNonKeyFrames = true
             }
 
@@ -124,8 +125,8 @@ object DeviceProfileFactory {
                 this.context = EncodingContext.STREAMING
                 protocol = MediaStreamProtocol.HLS
                 container = "ts"
-                audioCodec("aac")
-                maxAudioChannels = "2"
+                audioCodec("aac", "mp3", "flac", "opus", "vorbis")
+                maxAudioChannels = "8"
             }
 
             // Subtitle profiles
