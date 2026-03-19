@@ -336,7 +336,7 @@ class PhoneActivity : AppCompatActivity() {
         reporter.reportPlaybackStart(itemIds.first(), startPositionMs)
         reporter.startPeriodicReporting(
             getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlaying() }
+            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
         )
 
         mediaPlayer.onItemTransition = { newIndex ->
@@ -360,7 +360,7 @@ class PhoneActivity : AppCompatActivity() {
                 newReporter.reportPlaybackStart(ids[newIndex], 0)
                 newReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
                 Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
             }
@@ -411,7 +411,7 @@ class PhoneActivity : AppCompatActivity() {
                 }
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
             } else {
                 playlistFailedCount++
@@ -535,7 +535,7 @@ class PhoneActivity : AppCompatActivity() {
         reporter.reportPlaybackStart(itemId, startPositionMs)
         reporter.startPeriodicReporting(
             getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlaying() }
+            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
         )
 
         // Report progress after seek completes (not immediately)
@@ -573,7 +573,7 @@ class PhoneActivity : AppCompatActivity() {
                 }
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
                 mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
                 mediaPlayer.onError = { hlsError ->

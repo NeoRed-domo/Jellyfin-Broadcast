@@ -289,7 +289,7 @@ class TvActivity : AppCompatActivity() {
         reporter.reportPlaybackStart(itemIds.first(), startPositionMs)
         reporter.startPeriodicReporting(
             getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlaying() }
+            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
         )
 
         // Item transition handler — new reporter per item
@@ -316,7 +316,7 @@ class TvActivity : AppCompatActivity() {
                 newReporter.reportPlaybackStart(ids[newIndex], 0)
                 newReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
                 Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size} (${ids[newIndex]})")
             }
@@ -372,7 +372,7 @@ class TvActivity : AppCompatActivity() {
                 playbackReporter = hlsReporter
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
             } else {
                 // No fallback possible — report stop and skip
@@ -519,7 +519,7 @@ class TvActivity : AppCompatActivity() {
         reporter.reportPlaybackStart(itemId, startPositionMs)
         reporter.startPeriodicReporting(
             getPosition = { mediaPlayer.getCurrentPosition() },
-            getIsPaused = { !mediaPlayer.isPlaying() }
+            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
         )
 
         // Report progress after seek completes (not immediately)
@@ -555,7 +555,7 @@ class TvActivity : AppCompatActivity() {
                 playbackReporter = pcmReporter
                 pcmReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
                 mediaPlayer.onSeekCompleted = { pcmReporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
@@ -581,7 +581,7 @@ class TvActivity : AppCompatActivity() {
                         playbackReporter = hlsReporter
                         hlsReporter.startPeriodicReporting(
                             getPosition = { mediaPlayer.getCurrentPosition() },
-                            getIsPaused = { !mediaPlayer.isPlaying() }
+                            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                         )
                         mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
                         mediaPlayer.onPlaybackEnded = {
@@ -612,7 +612,7 @@ class TvActivity : AppCompatActivity() {
                 playbackReporter = hlsReporter
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlaying() }
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
                 mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
