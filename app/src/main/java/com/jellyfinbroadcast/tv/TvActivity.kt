@@ -321,32 +321,34 @@ class TvActivity : AppCompatActivity() {
         mediaPlayer.playPlaylist(streamInfos, startPositionMs)
 
         // Item transition handler — new reporter per item
+        // STOP must complete before START to ensure correct ordering at the server
         mediaPlayer.onItemTransition = { newIndex ->
             val ids = playlistItemIds
             val streams = playlistStreamInfos
             if (ids != null && streams != null && newIndex < ids.size) {
-                // Use lastKnownPositionMs because getCurrentPosition() now returns
-                // the position in the NEW item (ExoPlayer already transitioned)
                 val oldReporter = playbackReporter
                 val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
+                // Sequential: STOP(old) → wait → START(new)
                 lifecycleScope.launch(Dispatchers.IO) {
                     oldReporter?.reportPlaybackStop(endPosMs)
                     oldReporter?.release()
+                    // Now start the new reporter on main thread
+                    withContext(Dispatchers.Main) {
+                        val stream = streams[newIndex]
+                        val method = when (stream) {
+                            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+                            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+                        }
+                        val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
+                        playbackReporter = newReporter
+                        newReporter.reportPlaybackStart(ids[newIndex], 0)
+                        newReporter.startPeriodicReporting(
+                            getPosition = { mediaPlayer.getCurrentPosition() },
+                            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                        )
+                        Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size} (${ids[newIndex]})")
+                    }
                 }
-
-                val stream = streams[newIndex]
-                val method = when (stream) {
-                    is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
-                    is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
-                }
-                val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
-                playbackReporter = newReporter
-                newReporter.reportPlaybackStart(ids[newIndex], 0)
-                newReporter.startPeriodicReporting(
-                    getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-                )
-                Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size} (${ids[newIndex]})")
             }
         }
 

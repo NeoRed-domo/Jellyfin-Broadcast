@@ -383,21 +383,22 @@ class PhoneActivity : AppCompatActivity() {
                 lifecycleScope.launch(Dispatchers.IO) {
                     oldReporter?.reportPlaybackStop(endPosMs)
                     oldReporter?.release()
+                    withContext(Dispatchers.Main) {
+                        val stream = streams[newIndex]
+                        val method = when (stream) {
+                            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+                            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+                        }
+                        val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
+                        playbackReporter = newReporter
+                        newReporter.reportPlaybackStart(ids[newIndex], 0)
+                        newReporter.startPeriodicReporting(
+                            getPosition = { mediaPlayer.getCurrentPosition() },
+                            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                        )
+                        Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
+                    }
                 }
-
-                val stream = streams[newIndex]
-                val method = when (stream) {
-                    is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
-                    is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
-                }
-                val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
-                playbackReporter = newReporter
-                newReporter.reportPlaybackStart(ids[newIndex], 0)
-                newReporter.startPeriodicReporting(
-                    getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-                )
-                Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
             }
         }
 
