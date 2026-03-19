@@ -39,7 +39,9 @@ class PlaybackReporter(
     fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
         lastKnownPositionMs = positionMs
-        scope.launch {
+        // NonCancellable: start report MUST reach the server even if scope is cancelled
+        // (e.g. by a fast error handler calling release() right after play)
+        scope.launch(NonCancellable) {
             runCatching {
                 playstateApi.reportPlaybackStart(
                     PlaybackStartInfo(
@@ -122,23 +124,26 @@ class PlaybackReporter(
     suspend fun reportPlaybackStop(positionMs: Long) {
         val itemId = currentItemId ?: return
         reportingJob?.cancel()
-        runCatching {
-            playstateApi.reportPlaybackStopped(
-                PlaybackStopInfo(
-                    item = null,
-                    itemId = itemId,
-                    sessionId = null,
-                    mediaSourceId = null,
-                    positionTicks = msToTicks(positionMs),
-                    liveStreamId = null,
-                    playSessionId = this@PlaybackReporter.playSessionId,
-                    failed = false,
-                    nextMediaType = null,
-                    playlistItemId = null,
-                    nowPlayingQueue = emptyList()
+        // NonCancellable: stop report MUST reach the server
+        withContext(NonCancellable) {
+            runCatching {
+                playstateApi.reportPlaybackStopped(
+                    PlaybackStopInfo(
+                        item = null,
+                        itemId = itemId,
+                        sessionId = null,
+                        mediaSourceId = null,
+                        positionTicks = msToTicks(positionMs),
+                        liveStreamId = null,
+                        playSessionId = this@PlaybackReporter.playSessionId,
+                        failed = false,
+                        nextMediaType = null,
+                        playlistItemId = null,
+                        nowPlayingQueue = emptyList()
+                    )
                 )
-            )
-        }.onFailure { Log.w(TAG, "reportPlaybackStop failed: ${it.message}") }
+            }.onFailure { Log.w(TAG, "reportPlaybackStop failed: ${it.message}") }
+        }
     }
 
     /** Send a progress report immediately (e.g. after pause/resume/seek) */
