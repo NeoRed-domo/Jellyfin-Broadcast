@@ -63,7 +63,12 @@ object DeviceProfileFactory {
             Log.i(TAG, "  ${cap.codec}: ${cap.maxWidth}x${cap.maxHeight}, " +
                 "${cap.maxBitDepth}-bit, ${cap.maxBitrate / 1_000_000}Mbps max")
         }
-        Log.i(TAG, "Detected audio codecs: $audioCodecs")
+        // FFmpeg software decoders handle these codecs regardless of hardware support
+        val ffmpegAudioCodecs = listOf("aac", "ac3", "eac3", "dts", "truehd", "mp3", "flac", "opus", "vorbis", "alac", "pcm_s16le", "pcm_s24le")
+        val allAudioCodecs = (audioCodecs + ffmpegAudioCodecs).distinct()
+
+        Log.i(TAG, "Detected hardware audio codecs: $audioCodecs")
+        Log.i(TAG, "All supported audio codecs (hw + FFmpeg): $allAudioCodecs")
 
         val passthroughCodecs = detectPassthroughCodecs(context)
         Log.i(TAG, "Passthrough codecs (HDMI): $passthroughCodecs")
@@ -72,19 +77,19 @@ object DeviceProfileFactory {
             maxStreamingBitrate = 120_000_000
             maxStaticBitrate = 120_000_000
 
-            // DirectPlay for video: only codecs the device can actually decode
+            // DirectPlay for video: hw + FFmpeg audio codecs
             directPlayProfile {
                 type = DlnaProfileType.VIDEO
                 container(*SUPPORTED_CONTAINERS)
                 videoCodec(*videoCodecNames.toTypedArray())
-                audioCodec(*audioCodecs.toTypedArray())
+                audioCodec(*allAudioCodecs.toTypedArray())
             }
 
             // DirectPlay for audio-only items
             directPlayProfile {
                 type = DlnaProfileType.AUDIO
-                container("mp3", "flac", "aac", "ogg", "wav", "webm")
-                audioCodec(*audioCodecs.toTypedArray())
+                container("mp3", "flac", "aac", "ogg", "wav", "webm", "m4a")
+                audioCodec(*allAudioCodecs.toTypedArray())
             }
 
             // Codec conditions: tell Jellyfin the limits per video codec
