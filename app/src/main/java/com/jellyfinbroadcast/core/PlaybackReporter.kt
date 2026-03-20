@@ -36,6 +36,12 @@ class PlaybackReporter(
     @Volatile var lastKnownPositionMs: Long = 0
         private set
 
+    /** Set internal state without sending a network report. Use for silent fallbacks. */
+    fun setCurrentItem(itemId: UUID, positionMs: Long) {
+        currentItemId = itemId
+        lastKnownPositionMs = positionMs
+    }
+
     fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
         lastKnownPositionMs = positionMs

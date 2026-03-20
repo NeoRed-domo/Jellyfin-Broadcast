@@ -400,11 +400,12 @@ class TvActivity : AppCompatActivity() {
 
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
-                hlsReporter.reportPlaybackStart(itemId, posMs)
+                hlsReporter.setCurrentItem(itemId, posMs)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
+                hlsReporter.reportProgressNow()
             } else {
                 // No fallback possible — report stop and skip
                 lifecycleScope.launch(Dispatchers.IO) {
@@ -585,11 +586,12 @@ class TvActivity : AppCompatActivity() {
                 // Continue reporting with same play session — server sees no interruption
                 val pcmReporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
                 playbackReporter = pcmReporter
-                pcmReporter.reportPlaybackStart(itemId, posMs)
+                pcmReporter.setCurrentItem(itemId, posMs)
                 pcmReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
+                pcmReporter.reportProgressNow() // immediate update so server knows we're alive
                 mediaPlayer.onSeekCompleted = { pcmReporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
                     val endPos = mediaPlayer.getCurrentPosition()
@@ -612,11 +614,12 @@ class TvActivity : AppCompatActivity() {
                         pcmReporter.release()
                         val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                         playbackReporter = hlsReporter
-                        hlsReporter.reportPlaybackStart(itemId, pcmPos)
+                        hlsReporter.setCurrentItem(itemId, pcmPos)
                         hlsReporter.startPeriodicReporting(
                             getPosition = { mediaPlayer.getCurrentPosition() },
                             getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                         )
+                        hlsReporter.reportProgressNow()
                         mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
                         mediaPlayer.onPlaybackEnded = {
                             val hlsEndPos = mediaPlayer.getCurrentPosition()
@@ -644,11 +647,12 @@ class TvActivity : AppCompatActivity() {
                 reporter.release()
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
-                hlsReporter.reportPlaybackStart(itemId, posMs)
+                hlsReporter.setCurrentItem(itemId, posMs)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
+                hlsReporter.reportProgressNow()
                 mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
                     val hlsEndPos = mediaPlayer.getCurrentPosition()
