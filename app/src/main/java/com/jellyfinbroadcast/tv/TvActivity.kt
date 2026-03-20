@@ -328,7 +328,11 @@ class TvActivity : AppCompatActivity() {
             if (ids != null && streams != null && newIndex < ids.size) {
                 val oldReporter = playbackReporter
                 val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
-                // Sequential: STOP(old) → wait → START(new)
+                // IMMEDIATELY stop old reporter's periodic reports to prevent
+                // ghost progress updates for the previous item
+                oldReporter?.stopPeriodicReporting()
+                playbackReporter = null
+                // Async: STOP(old) → wait → START(new)
                 lifecycleScope.launch(Dispatchers.IO) {
                     oldReporter?.reportPlaybackStop(endPosMs)
                     oldReporter?.release()

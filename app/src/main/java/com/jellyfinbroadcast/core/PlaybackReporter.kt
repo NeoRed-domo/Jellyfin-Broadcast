@@ -78,6 +78,12 @@ class PlaybackReporter(
         }
     }
 
+    /** Immediately stop periodic progress reports (call before async stop/release) */
+    fun stopPeriodicReporting() {
+        reportingJob?.cancel()
+        reportingJob = null
+    }
+
     fun startPeriodicReporting(getPosition: () -> Long, getIsPaused: () -> Boolean = { false }) {
         getPositionMs = getPosition
         getIsPausedState = getIsPaused

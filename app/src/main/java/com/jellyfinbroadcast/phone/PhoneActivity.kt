@@ -380,6 +380,8 @@ class PhoneActivity : AppCompatActivity() {
             if (ids != null && streams != null && newIndex < ids.size) {
                 val oldReporter = playbackReporter
                 val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
+                oldReporter?.stopPeriodicReporting()
+                playbackReporter = null
                 lifecycleScope.launch(Dispatchers.IO) {
                     oldReporter?.reportPlaybackStop(endPosMs)
                     oldReporter?.release()
