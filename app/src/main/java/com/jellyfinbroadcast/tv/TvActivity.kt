@@ -400,6 +400,7 @@ class TvActivity : AppCompatActivity() {
 
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
+                hlsReporter.reportPlaybackStart(itemId, posMs)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
@@ -584,6 +585,7 @@ class TvActivity : AppCompatActivity() {
                 // Continue reporting with same play session — server sees no interruption
                 val pcmReporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
                 playbackReporter = pcmReporter
+                pcmReporter.reportPlaybackStart(itemId, posMs)
                 pcmReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
@@ -610,6 +612,7 @@ class TvActivity : AppCompatActivity() {
                         pcmReporter.release()
                         val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                         playbackReporter = hlsReporter
+                        hlsReporter.reportPlaybackStart(itemId, pcmPos)
                         hlsReporter.startPeriodicReporting(
                             getPosition = { mediaPlayer.getCurrentPosition() },
                             getIsPaused = { !mediaPlayer.isPlayWhenReady() }
@@ -641,6 +644,7 @@ class TvActivity : AppCompatActivity() {
                 reporter.release()
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
+                hlsReporter.reportPlaybackStart(itemId, posMs)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
