@@ -309,12 +309,14 @@ class TvActivity : AppCompatActivity() {
         // Report start only when ExoPlayer is actually ready
         mediaPlayer.onPlaybackReady = {
             Log.i(TAG, "Playlist player ready, reporting start to Jellyfin")
-            reporter.reportPlaybackStart(itemIds.first(), mediaPlayer.getCurrentPosition())
-            reporter.startPeriodicReporting(
-                getPosition = { mediaPlayer.getCurrentPosition() },
-                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-            )
-            stateMachine.transition(AppEvent.Play)
+            lifecycleScope.launch {
+                reporter.reportPlaybackStart(itemIds.first(), mediaPlayer.getCurrentPosition())
+                reporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                )
+                stateMachine.transition(AppEvent.Play)
+            }
         }
 
         Log.i(TAG, "Playing playlist: ${itemIds.size} items")
@@ -548,12 +550,14 @@ class TvActivity : AppCompatActivity() {
         // Report start only when ExoPlayer is actually ready to play
         mediaPlayer.onPlaybackReady = {
             Log.i(TAG, "Player ready, reporting start to Jellyfin")
-            reporter.reportPlaybackStart(itemId, mediaPlayer.getCurrentPosition())
-            reporter.startPeriodicReporting(
-                getPosition = { mediaPlayer.getCurrentPosition() },
-                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-            )
-            stateMachine.transition(AppEvent.Play)
+            lifecycleScope.launch {
+                reporter.reportPlaybackStart(itemId, mediaPlayer.getCurrentPosition())
+                reporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                )
+                stateMachine.transition(AppEvent.Play)
+            }
         }
 
         Log.i(TAG, "Playing: ${streamInfo.url} (${streamInfo::class.simpleName})")

@@ -42,12 +42,11 @@ class PlaybackReporter(
         lastKnownPositionMs = positionMs
     }
 
-    fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
+    /** Suspend version: waits for the START report to reach the server before returning. */
+    suspend fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
         lastKnownPositionMs = positionMs
-        // NonCancellable: start report MUST reach the server even if scope is cancelled
-        // (e.g. by a fast error handler calling release() right after play)
-        scope.launch(NonCancellable) {
+        withContext(NonCancellable + Dispatchers.IO) {
             runCatching {
                 playstateApi.reportPlaybackStart(
                     PlaybackStartInfo(

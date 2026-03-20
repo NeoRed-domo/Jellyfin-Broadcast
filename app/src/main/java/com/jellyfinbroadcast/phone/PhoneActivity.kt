@@ -359,11 +359,13 @@ class PhoneActivity : AppCompatActivity() {
         // Report start only when ExoPlayer is actually ready
         mediaPlayer.onPlaybackReady = {
             Log.i(TAG, "Playlist player ready, reporting start to Jellyfin")
-            reporter.reportPlaybackStart(itemIds.first(), mediaPlayer.getCurrentPosition())
-            reporter.startPeriodicReporting(
-                getPosition = { mediaPlayer.getCurrentPosition() },
-                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-            )
+            lifecycleScope.launch {
+                reporter.reportPlaybackStart(itemIds.first(), mediaPlayer.getCurrentPosition())
+                reporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                )
+            }
         }
 
         Log.i(TAG, "Playing playlist: ${itemIds.size} items")
@@ -444,9 +446,7 @@ class PhoneActivity : AppCompatActivity() {
 
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
-                lifecycleScope.launch(Dispatchers.IO) {
-                    hlsReporter.reportPlaybackStart(itemId, 0)
-                }
+                hlsReporter.setCurrentItem(itemId, 0)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
@@ -565,11 +565,13 @@ class PhoneActivity : AppCompatActivity() {
         // Report start only when ExoPlayer is actually ready to play
         mediaPlayer.onPlaybackReady = {
             Log.i(TAG, "Player ready, reporting start to Jellyfin")
-            reporter.reportPlaybackStart(itemId, mediaPlayer.getCurrentPosition())
-            reporter.startPeriodicReporting(
-                getPosition = { mediaPlayer.getCurrentPosition() },
-                getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-            )
+            lifecycleScope.launch {
+                reporter.reportPlaybackStart(itemId, mediaPlayer.getCurrentPosition())
+                reporter.startPeriodicReporting(
+                    getPosition = { mediaPlayer.getCurrentPosition() },
+                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
+                )
+            }
         }
 
         Log.i(TAG, "Playing: ${streamInfo.url} (${streamInfo::class.simpleName})")
@@ -611,9 +613,7 @@ class PhoneActivity : AppCompatActivity() {
                 reporter.release()
                 val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
                 playbackReporter = hlsReporter
-                lifecycleScope.launch(Dispatchers.IO) {
-                    hlsReporter.reportPlaybackStart(itemId, startPositionMs)
-                }
+                hlsReporter.setCurrentItem(itemId, startPositionMs)
                 hlsReporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
