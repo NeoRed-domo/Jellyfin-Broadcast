@@ -322,38 +322,25 @@ class TvActivity : AppCompatActivity() {
         Log.i(TAG, "Playing playlist: ${itemIds.size} items")
         mediaPlayer.playPlaylist(streamInfos, startPositionMs)
 
-        // Item transition handler — new reporter per item
-        // STOP must complete before START to ensure correct ordering at the server
+        // Item transition handler — SAME reporter, just transition the item
+        // No new reporter = no race conditions from multiple reporters
         mediaPlayer.onItemTransition = { newIndex ->
             val ids = playlistItemIds
             val streams = playlistStreamInfos
             if (ids != null && streams != null && newIndex < ids.size) {
-                val oldReporter = playbackReporter
-                val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
-                // IMMEDIATELY stop old reporter's periodic reports to prevent
-                // ghost progress updates for the previous item
-                oldReporter?.stopPeriodicReporting()
-                playbackReporter = null
-                // Async: STOP(old) → wait → START(new)
-                lifecycleScope.launch(Dispatchers.IO) {
-                    oldReporter?.reportPlaybackStop(endPosMs)
-                    oldReporter?.release()
-                    // Now start the new reporter on main thread
-                    withContext(Dispatchers.Main) {
-                        val stream = streams[newIndex]
-                        val method = when (stream) {
-                            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
-                            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
-                        }
-                        val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
-                        playbackReporter = newReporter
-                        newReporter.reportPlaybackStart(ids[newIndex], 0)
-                        newReporter.startPeriodicReporting(
-                            getPosition = { mediaPlayer.getCurrentPosition() },
-                            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-                        )
-                        Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size} (${ids[newIndex]})")
-                    }
+                val stream = streams[newIndex]
+                val method = when (stream) {
+                    is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+                    is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+                }
+                Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size} (${ids[newIndex]})")
+                lifecycleScope.launch {
+                    playbackReporter?.transitionToItem(
+                        newItemId = ids[newIndex],
+                        newPlayMethod = method,
+                        newPlaySessionId = stream.playSessionId,
+                        newSubtitleStreamIndex = stream.subtitleStreamIndex
+                    )
                 }
             }
         }
@@ -401,17 +388,11 @@ class TvActivity : AppCompatActivity() {
                 Log.i(TAG, "Silently replacing playlist item $currentIndex with HLS fallback")
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, currentStream.playSessionId)
                 streams[currentIndex] = hlsStream
-                playbackReporter?.release()
                 mediaPlayer.replaceItem(currentIndex, hlsStream, posMs)
-
-                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
-                playbackReporter = hlsReporter
-                hlsReporter.setCurrentItem(itemId, posMs)
-                hlsReporter.startPeriodicReporting(
-                    getPosition = { mediaPlayer.getCurrentPosition() },
-                    getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-                )
-                hlsReporter.reportProgressNow()
+                // Update existing reporter — no new reporter, no race
+                playbackReporter?.updateSessionInfo(PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
+                playbackReporter?.setCurrentItem(itemId, posMs)
+                playbackReporter?.reportProgressNow()
             } else {
                 // No fallback possible — report stop and skip
                 lifecycleScope.launch(Dispatchers.IO) {
@@ -584,92 +565,82 @@ class TvActivity : AppCompatActivity() {
             if (mediaPlayer.isPassthroughEnabled() && MediaPlayer.isAudioTrackError(error)) {
                 // Audio passthrough failed → silent retry with PCM (NO stop report to server)
                 Log.i(TAG, "Audio passthrough failed (${error.errorCode}), silently retrying with PCM")
-                reporter.release()
+                reporter.stopPeriodicReporting()
                 mediaPlayer.initialize(enablePassthrough = false)
                 val playerFrag = supportFragmentManager
                     .findFragmentById(R.id.container) as? TvPlayerFragment
                 playerFrag?.rebindPlayer(mediaPlayer)
                 mediaPlayer.play(streamInfo, posMs)
 
-                // Continue reporting with same play session — server sees no interruption
-                val pcmReporter = PlaybackReporter(api, reportPlayMethod, streamInfo.playSessionId, streamInfo.subtitleStreamIndex)
-                playbackReporter = pcmReporter
-                pcmReporter.setCurrentItem(itemId, posMs)
-                pcmReporter.startPeriodicReporting(
+                // Keep same reporter — just restart periodic reporting on new player
+                reporter.setCurrentItem(itemId, posMs)
+                reporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
-                pcmReporter.reportProgressNow() // immediate update so server knows we're alive
-                mediaPlayer.onSeekCompleted = { pcmReporter.reportProgressNow() }
+                reporter.reportProgressNow()
+                mediaPlayer.onSeekCompleted = { reporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
                     val endPos = mediaPlayer.getCurrentPosition()
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        pcmReporter.reportPlaybackStop(endPos)
-                    }
+                    lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(endPos) }
                     stateMachine.transition(AppEvent.Stop)
                 }
                 mediaPlayer.onError = { pcmError ->
                     Log.e(TAG, "PCM also failed: ${pcmError.message}", pcmError)
                     val pcmPos = mediaPlayer.getCurrentPosition()
                     if (streamInfo is StreamInfo.DirectPlay) {
-                        // Silent HLS fallback (NO stop report)
                         val sourceId = itemId.toString().replace("-", "")
                         val hlsUrl = streamInfo.serverTranscodeUrl
                             ?: MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
                         Log.i(TAG, "Silently falling back to HLS transcode")
                         val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
                         mediaPlayer.play(hlsStream, pcmPos)
-                        pcmReporter.release()
-                        val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
-                        playbackReporter = hlsReporter
-                        hlsReporter.setCurrentItem(itemId, pcmPos)
-                        hlsReporter.startPeriodicReporting(
+                        // Same reporter, just update session info
+                        reporter.updateSessionInfo(PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
+                        reporter.setCurrentItem(itemId, pcmPos)
+                        reporter.startPeriodicReporting(
                             getPosition = { mediaPlayer.getCurrentPosition() },
                             getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                         )
-                        hlsReporter.reportProgressNow()
-                        mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
+                        mediaPlayer.onSeekCompleted = { reporter.reportProgressNow() }
                         mediaPlayer.onPlaybackEnded = {
                             val hlsEndPos = mediaPlayer.getCurrentPosition()
-                            lifecycleScope.launch(Dispatchers.IO) { hlsReporter.reportPlaybackStop(hlsEndPos) }
+                            lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(hlsEndPos) }
                             stateMachine.transition(AppEvent.Stop)
                         }
                         mediaPlayer.onError = { hlsError ->
                             Log.e(TAG, "HLS also failed: ${hlsError.message}", hlsError)
-                            lifecycleScope.launch(Dispatchers.IO) { hlsReporter.reportPlaybackStop(mediaPlayer.getCurrentPosition()) }
+                            lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(mediaPlayer.getCurrentPosition()) }
                             stateMachine.transition(AppEvent.Stop)
                         }
                     } else {
-                        lifecycleScope.launch(Dispatchers.IO) { pcmReporter.reportPlaybackStop(pcmPos) }
+                        lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(pcmPos) }
                         stateMachine.transition(AppEvent.Stop)
                     }
                 }
             } else if (streamInfo is StreamInfo.DirectPlay) {
-                // Silent HLS fallback (NO stop report — server sees continuous playback)
+                // Silent HLS fallback — same reporter, update session info
                 val sourceId = itemId.toString().replace("-", "")
                 val hlsUrl = streamInfo.serverTranscodeUrl
                     ?: MediaPlayer.buildHlsFallbackUrl(serverUrl, itemId.toString(), token, sourceId)
                 Log.i(TAG, "DirectPlay failed, silently falling back to HLS")
                 val hlsStream = StreamInfo.HlsTranscode(hlsUrl, streamInfo.playSessionId)
                 mediaPlayer.play(hlsStream, posMs)
-                reporter.release()
-                val hlsReporter = PlaybackReporter(api, PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
-                playbackReporter = hlsReporter
-                hlsReporter.setCurrentItem(itemId, posMs)
-                hlsReporter.startPeriodicReporting(
+                reporter.updateSessionInfo(PlayMethod.TRANSCODE, hlsStream.playSessionId, hlsStream.subtitleStreamIndex)
+                reporter.setCurrentItem(itemId, posMs)
+                reporter.startPeriodicReporting(
                     getPosition = { mediaPlayer.getCurrentPosition() },
                     getIsPaused = { !mediaPlayer.isPlayWhenReady() }
                 )
-                hlsReporter.reportProgressNow()
-                mediaPlayer.onSeekCompleted = { hlsReporter.reportProgressNow() }
+                mediaPlayer.onSeekCompleted = { reporter.reportProgressNow() }
                 mediaPlayer.onPlaybackEnded = {
                     val hlsEndPos = mediaPlayer.getCurrentPosition()
-                    lifecycleScope.launch(Dispatchers.IO) { hlsReporter.reportPlaybackStop(hlsEndPos) }
+                    lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(hlsEndPos) }
                     stateMachine.transition(AppEvent.Stop)
                 }
                 mediaPlayer.onError = { hlsError ->
                     Log.e(TAG, "HLS also failed: ${hlsError.message}", hlsError)
-                    lifecycleScope.launch(Dispatchers.IO) { hlsReporter.reportPlaybackStop(mediaPlayer.getCurrentPosition()) }
+                    lifecycleScope.launch(Dispatchers.IO) { reporter.reportPlaybackStop(mediaPlayer.getCurrentPosition()) }
                     stateMachine.transition(AppEvent.Stop)
                 }
             } else {

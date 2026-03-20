@@ -380,28 +380,19 @@ class PhoneActivity : AppCompatActivity() {
             val ids = playlistItemIds
             val streams = playlistStreamInfos
             if (ids != null && streams != null && newIndex < ids.size) {
-                val oldReporter = playbackReporter
-                val endPosMs = oldReporter?.lastKnownPositionMs ?: 0L
-                oldReporter?.stopPeriodicReporting()
-                playbackReporter = null
-                lifecycleScope.launch(Dispatchers.IO) {
-                    oldReporter?.reportPlaybackStop(endPosMs)
-                    oldReporter?.release()
-                    withContext(Dispatchers.Main) {
-                        val stream = streams[newIndex]
-                        val method = when (stream) {
-                            is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
-                            is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
-                        }
-                        val newReporter = PlaybackReporter(api, method, stream.playSessionId, stream.subtitleStreamIndex)
-                        playbackReporter = newReporter
-                        newReporter.reportPlaybackStart(ids[newIndex], 0)
-                        newReporter.startPeriodicReporting(
-                            getPosition = { mediaPlayer.getCurrentPosition() },
-                            getIsPaused = { !mediaPlayer.isPlayWhenReady() }
-                        )
-                        Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
-                    }
+                val stream = streams[newIndex]
+                val method = when (stream) {
+                    is StreamInfo.DirectPlay -> PlayMethod.DIRECT_PLAY
+                    is StreamInfo.HlsTranscode -> PlayMethod.TRANSCODE
+                }
+                Log.i(TAG, "Playlist transition: item ${newIndex + 1}/${ids.size}")
+                lifecycleScope.launch {
+                    playbackReporter?.transitionToItem(
+                        newItemId = ids[newIndex],
+                        newPlayMethod = method,
+                        newPlaySessionId = stream.playSessionId,
+                        newSubtitleStreamIndex = stream.subtitleStreamIndex
+                    )
                 }
             }
         }

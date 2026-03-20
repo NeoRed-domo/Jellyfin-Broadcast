@@ -14,9 +14,9 @@ import java.util.UUID
 
 class PlaybackReporter(
     private val api: ApiClient,
-    private val playMethod: PlayMethod = PlayMethod.DIRECT_PLAY,
-    private val playSessionId: String? = null,
-    private val subtitleStreamIndex: Int? = null
+    private var playMethod: PlayMethod = PlayMethod.DIRECT_PLAY,
+    private var playSessionId: String? = null,
+    private var subtitleStreamIndex: Int? = null
 ) {
 
     companion object {
@@ -42,7 +42,14 @@ class PlaybackReporter(
         lastKnownPositionMs = positionMs
     }
 
-    /** Suspend version: waits for the START report to reach the server before returning. */
+    /** Update session info for silent fallbacks (codec change without stop/start) */
+    fun updateSessionInfo(playMethod: PlayMethod, playSessionId: String?, subtitleStreamIndex: Int? = null) {
+        this.playMethod = playMethod
+        this.playSessionId = playSessionId
+        this.subtitleStreamIndex = subtitleStreamIndex
+    }
+
+    /** Suspend: waits for the START report to reach the server before returning. */
     suspend fun reportPlaybackStart(itemId: UUID, positionMs: Long) {
         currentItemId = itemId
         lastKnownPositionMs = positionMs
@@ -77,7 +84,59 @@ class PlaybackReporter(
         }
     }
 
-    /** Immediately stop periodic progress reports (call before async stop/release) */
+    /**
+     * Transition from one item to another: STOP(old) then START(new), sequentially.
+     * Uses the SAME reporter — no race conditions from multiple reporters.
+     */
+    suspend fun transitionToItem(
+        newItemId: UUID,
+        newPlayMethod: PlayMethod,
+        newPlaySessionId: String?,
+        newSubtitleStreamIndex: Int? = null
+    ) {
+        val oldItemId = currentItemId
+        val endPos = lastKnownPositionMs
+        // Stop periodic reporting during transition
+        reportingJob?.cancel()
+        // Report stop for old item
+        if (oldItemId != null) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching {
+                    playstateApi.reportPlaybackStopped(
+                        PlaybackStopInfo(
+                            item = null,
+                            itemId = oldItemId,
+                            sessionId = null,
+                            mediaSourceId = null,
+                            positionTicks = msToTicks(endPos),
+                            liveStreamId = null,
+                            playSessionId = this@PlaybackReporter.playSessionId,
+                            failed = false,
+                            nextMediaType = null,
+                            playlistItemId = null,
+                            nowPlayingQueue = emptyList()
+                        )
+                    )
+                }.onFailure { Log.w(TAG, "transitionToItem: stop failed: ${it.message}") }
+            }
+        }
+        // Update session info for new item
+        playMethod = newPlayMethod
+        playSessionId = newPlaySessionId
+        subtitleStreamIndex = newSubtitleStreamIndex
+        // Report start for new item
+        reportPlaybackStart(newItemId, 0)
+        // Resume periodic reporting
+        if (getPositionMs != null) {
+            reportingJob = scope.launch {
+                while (isActive) {
+                    delay(REPORT_INTERVAL_MS)
+                    reportProgress()
+                }
+            }
+        }
+    }
+
     fun stopPeriodicReporting() {
         reportingJob?.cancel()
         reportingJob = null
@@ -86,6 +145,7 @@ class PlaybackReporter(
     fun startPeriodicReporting(getPosition: () -> Long, getIsPaused: () -> Boolean = { false }) {
         getPositionMs = getPosition
         getIsPausedState = getIsPaused
+        reportingJob?.cancel()
         reportingJob = scope.launch {
             while (isActive) {
                 delay(REPORT_INTERVAL_MS)
@@ -96,7 +156,6 @@ class PlaybackReporter(
 
     private suspend fun reportProgress() {
         val itemId = currentItemId ?: return
-        // Read ExoPlayer state on main thread (required by ExoPlayer)
         val (posMs, isPaused) = withContext(Dispatchers.Main) {
             val pos = getPositionMs?.invoke() ?: 0L
             val paused = getIsPausedState?.invoke() ?: false
@@ -112,7 +171,7 @@ class PlaybackReporter(
                     sessionId = null,
                     mediaSourceId = null,
                     audioStreamIndex = null,
-                    subtitleStreamIndex = null,
+                    subtitleStreamIndex = this@PlaybackReporter.subtitleStreamIndex,
                     isPaused = isPaused,
                     isMuted = false,
                     positionTicks = msToTicks(posMs),
@@ -135,8 +194,7 @@ class PlaybackReporter(
     suspend fun reportPlaybackStop(positionMs: Long) {
         val itemId = currentItemId ?: return
         reportingJob?.cancel()
-        // NonCancellable: stop report MUST reach the server
-        withContext(NonCancellable) {
+        withContext(NonCancellable + Dispatchers.IO) {
             runCatching {
                 playstateApi.reportPlaybackStopped(
                     PlaybackStopInfo(
@@ -157,7 +215,6 @@ class PlaybackReporter(
         }
     }
 
-    /** Send a progress report immediately (e.g. after pause/resume/seek) */
     fun reportProgressNow() {
         scope.launch { reportProgress() }
     }
